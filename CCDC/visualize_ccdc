@@ -1,0 +1,937 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var table = ee.FeatureCollection("users/zsy11600/ChinaTree/Sencondary_forest_points"),
+    points_pro = ee.FeatureCollection("projects/my-image-assets/assets/China/points_0_2");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**
+ * 
+ * Visualize CCDC saved results and run CCDC for individual pixels
+ * on the fly using Landat time series 
+ * 
+ * Author: Paulo Arevalo (parevalo@bu.edu)
+ * 
+ * Please cite as:
+ * Arévalo, P., Bullock, E.L., Woodcock, C.E., Olofsson, P., 2020. 
+ * A Suite of Tools for Continuous Land Change Monitoring in Google Earth Engine. 
+ * Front. Clim. 2. https://doi.org/10.3389/fclim.2020.576740
+ * 
+ * Additional credits: Zhiqiang Yang, and Noel Gorelick. 
+ * 
+*/ 
+
+var samples = points_pro;
+var sample = samples.filterMetadata('ID','equals',1775
+
+
+).first();
+
+
+var point_test = sample.geometry();
+print('Point_test',sample);
+
+Map.addLayer(point_test,{},"testPoint");
+Map.centerObject(point_test,18);
+
+
+
+
+
+
+
+
+
+var utils = require('users/parevalo_bu/gee-ccdc-tools:ccdcUtilities/api') 
+var uiUtils = require('users/parevalo_bu/gee-ccdc-tools:ccdcUtilities/ui') 
+var palettes = require('users/gena/packages:palettes')
+
+
+//////////////// GLOBAL VARIABLES ////////////////
+var ccdParams = {}
+var runParams = {}
+var vizParams = {}
+var GLOBAL = {}
+var app = {}
+// Dictionary to store variable states
+var PROPS = {}
+
+var landsatCollections = {
+  "Landsat C1": 1,
+  "Landsat C2": 2,
+}
+
+GLOBAL.SUBCOEFS = ["INTP", "SLP", "COS", "SIN", "COS2", "SIN2", "COS3", "SIN3"]
+GLOBAL.COEFS = GLOBAL.SUBCOEFS.concat("RMSE")
+// GLOBAL.FULLCOEFS = GLOBAL.COEFS.concat('PHASE', 'AMPLITUDE')
+GLOBAL.FULLCOEFS = GLOBAL.COEFS.concat('PHASE', 'AMPLITUDE', 'PHASE2', 'AMPLITUDE2', 'PHASE3', 'AMPLITUDE3')
+GLOBAL.SEGS = ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10"]
+
+// TODO:  adding grid for export
+GLOBAL.GRIDS = ee.FeatureCollection('projects/GLANCE/GRIDS/GEOG_LAND/GLANCE_Classification_GRID_5count')
+GLOBAL.REGIONS = ['Select Region','AF','AN','AS','EU','NA','OC','SA']
+
+// Vars for TS viewer
+var INDICES = ['NDVI', 'NBR', 'EVI', 'EVI2', 'NDFI', 'GREENNESS', 'BRIGHTNESS',
+    'WETNESS','GV','Shade','NPV','Soil']
+var BANDS = ['BLUE','GREEN','RED', 'NIR', 'SWIR1', 'SWIR2'] 
+var FULLBANDS = BANDS.concat(INDICES)
+var BPBANDS = ['GREEN', 'RED', 'NIR', 'SWIR1', 'SWIR2']
+var TMBANDS = ['GREEN', 'SWIR2']
+var dateFormat = 1
+
+// Define all custom palettes here, or call gena palettes in the code itself
+var PALETTES = {}
+PALETTES.CHANGE = ['#67001f','#b2182b','#d6604d','#f4a582','#fddbc7','#f7f7f7',
+    '#d1e5f0','#92c5de','#4393c3','#2166ac','#053061']
+PALETTES.DATE = ['#ffffcc','#ffeda0','#fed976','#feb24c','#fd8d3c','#fc4e2a',
+    '#e31a1c','#bd0026','#800026']
+PALETTES.COUNT = ['#ffffd9','#edf8b1','#c7e9b4','#7fcdbb','#41b6c4','#1d91c0',
+    '#225ea8','#253494','#081d58']
+
+
+// Visualization parameters
+var visLabels = {
+  fontWeight: 'bold', 
+  fontSize: '14px', 
+  // width: '100%',
+  padding: '4px 4px 4px 4px',
+  border: '1px solid black',
+  color: 'white',
+  backgroundColor: 'black',
+  textAlign: 'left',
+  stretch: 'horizontal'
+  }
+
+var horizontalStyle = {stretch: 'horizontal', width: '100%'}
+GLOBAL.CCDCPARAMS = []
+// Callback function for load button
+var doLoad = function(obj){
+  // Temporary: clear labels if load button is re clicked
+  app.loader.infoBox.widgets().get(1).setValue('Suspected date format is: LOADING... Please wait')
+  app.loader.infoBox.widgets().get(0).setValue('Available bands are: LOADING... Please wait')
+  
+  PROPS.pathType = app.loader.imOrCol.widgets().get(1).getValue()
+  PROPS.dataPath = app.loader.coefImage.widgets().get(1).getValue()
+  PROPS.filterVal = app.loader.filterBox.widgets().get(1).getValue()
+  // Load results and extract band names and date format
+  if (PROPS.pathType == 'Image') {
+    PROPS.results = ee.Image(PROPS.dataPath)
+    var tempImg = ee.Image(PROPS.dataPath)
+    
+  } else {
+    // Filter CCDC run, most recent one is z as of 04/16/2020.
+    PROPS.results = ee.ImageCollection(PROPS.dataPath)
+                      .filterMetadata('system:index', 'starts_with', PROPS.filterVal)
+                      
+    var tempImg = PROPS.results.first()
+    PROPS.results = PROPS.results.mosaic()
+    
+  }
+  
+  // Evaluate ccdc params dictionary and set date format according to it
+  tempImg.toDictionary().evaluate(function(dict){
+    PROPS.dateFormat = dict['dateFormat']
+    PROPS.startDate = dict['startDate']
+    PROPS.endDate = dict['endDate']
+    
+    // Show potential date format
+    var dateFormatString
+    if (PROPS.dateFormat === null){
+      dateFormatString = 'UNKNOWN'
+    } else if (PROPS.dateFormat == 0){
+      dateFormatString = 'Julian days (code 0)'
+    } else if (PROPS.dateFormat == 1){
+      dateFormatString = 'Fractional years (code 1)'
+    } else if (PROPS.dateFormat == 2){  
+      dateFormatString = 'Unix time in ms (code 2)'
+    } else {
+      dateFormatString = PROPS.dateFormat 
+      PROPS.dateFormat = 1
+
+    }
+    
+    app.loader.infoBox.widgets().get(1).setValue('Suspected date format is: ' + dateFormatString)
+    
+  })
+  
+  
+  // Get coefficient band names and display
+  PROPS.bands = PROPS.results.select(".*_coefs")
+                      .bandNames()
+                      .map(function(x){ 
+                        return ee.String(x).split('_').get(0)
+                      })
+
+  
+  PROPS.bands.evaluate(function(vals){
+    app.loader.infoBox.widgets().get(0).setValue('Available bands are: ' + vals)
+    // Set synthetic panel
+    var redBox = uiUtils.generateSelectorPanel('RED band', vals)
+    var greenBox = uiUtils.generateSelectorPanel('GREEN band', vals)
+    var blueBox = uiUtils.generateSelectorPanel('BLUE band', vals)
+    app.synt.synthPanel.clear()
+    app.synt.synthPanel.add(ui.Label('Create synthetic image',visLabels))
+    app.synt.synthPanel.add(app.synt.dateBox)
+    app.synt.synthPanel.add(redBox)
+    app.synt.synthPanel.add(greenBox)
+    app.synt.synthPanel.add(blueBox)
+    app.synt.synthPanel.add(app.synt.minBox)
+    app.synt.synthPanel.add(app.synt.maxBox)
+    app.synt.synthPanel.add(app.synt.createSynt)
+    
+    // Set coefficient panel
+    var coefBandPanelGenerator = function(){ return ui.Panel([
+      ui.Select({items:vals, style:{stretch: 'horizontal'}}),
+      ui.Select({items:GLOBAL.FULLCOEFS, style:{stretch: 'horizontal'}}),
+      ui.Textbox({value:'0', style:{stretch: 'horizontal'}}) ,
+      ui.Textbox({value:'1', style:{stretch: 'horizontal'}}) 
+    ],
+    ui.Panel.Layout.Flow('horizontal'),
+    horizontalStyle)}  
+      
+    var REDcoefBandPanel = coefBandPanelGenerator()
+    var GREENcoefBandPanel = coefBandPanelGenerator()
+    var BLUEcoefBandPanel = coefBandPanelGenerator()
+    
+    app.coefs.coefPanel.clear()
+    app.coefs.coefPanel.add(ui.Label('Visualize coefficients',visLabels))
+    app.coefs.coefPanel.add(app.coefs.coefsDateBox)
+    app.coefs.coefPanel.add(app.coefs.singleCoefMode)
+    app.coefs.coefPanel.add(REDcoefBandPanel)
+    app.coefs.coefPanel.add(GREENcoefBandPanel)
+    app.coefs.coefPanel.add(BLUEcoefBandPanel)
+    app.coefs.coefPanel.add(app.coefs.showCoefs)
+    
+    // Set change panel
+    var bandSelect = uiUtils.generateSelectorPanel('Magnitude band', vals)
+    app.change.changePanel.clear()
+    app.change.changePanel.add(ui.Label('Visualize change',visLabels))
+    app.change.changePanel.add(app.change.sDate)
+    app.change.changePanel.add(app.change.eDate)
+    app.change.changePanel.add(bandSelect)
+    app.change.changePanel.add(app.change.minMag)
+    app.change.changePanel.add(app.change.maxMag)
+    app.change.changePanel.add(app.change.changeSelect)
+    app.change.changePanel.add(app.change.loadChgButton)
+    app.change.changePanel.add(app.change.loadFirstChgButton)
+    app.change.changePanel.add(app.change.loadLastChgButton)
+    
+  })
+  
+}
+
+
+// Callback function for create synthetic button
+var doCreateSynt = function(obj){
+  // Get bands as local list from widget
+  PROPS.bandList = app.synt.synthPanel.widgets().get(2).widgets().get(1).items().getJsArray()
+  // Get parameters
+  PROPS.predDate = app.synt.dateBox.widgets().get(1).getValue()
+  PROPS.R = app.synt.synthPanel.widgets().get(2).widgets().get(1).getValue()
+  PROPS.G = app.synt.synthPanel.widgets().get(3).widgets().get(1).getValue()
+  PROPS.B = app.synt.synthPanel.widgets().get(4).widgets().get(1).getValue()
+  PROPS.stretchMin = app.synt.minBox.widgets().get(1).getValue()
+  PROPS.stretchMax = app.synt.maxBox.widgets().get(1).getValue()
+  
+  // Get ccdc coefficients
+  var ccdImage = utils.CCDC.buildCcdImage(PROPS.results, GLOBAL.SEGS.length, PROPS.bandList)
+  
+  // Convert format to output date
+  // TODO: Ask user for input and output formats, or automate
+  
+  var dateParams = {inputFormat: 3, inputDate: PROPS.predDate, outputFormat: 1}
+  var formattedDate = utils.Dates.convertDate(dateParams)
+   
+  // Obtain synthetic and add
+  var synthetic =utils.CCDC.getMultiSynthetic(ccdImage, formattedDate, PROPS.dateFormat, PROPS.bandList, GLOBAL.SEGS)
+  app.main.mapPanel.addLayer({eeObject:synthetic, 
+                      visParams: {bands:[PROPS.R, PROPS.G, PROPS.B], 
+                                  min:PROPS.stretchMin, max: PROPS.stretchMax}, 
+                      name: 'Synthetic '+ PROPS.predDate})
+  // // Test HSV viz for fun
+  // mapPanel.addLayer({eeObject:synthetic.select([PROPS.R, PROPS.G, PROPS.B])
+  //                                       .unitScale(ee.Number.parse(PROPS.stretchMin), 
+  //                                                 ee.Number.parse(PROPS.stretchMax))
+  //                                       .rgbToHsv(), 
+  //                     name: 'Synthetic HSV'+ PROPS.predDate})
+
+}
+
+
+// Callback function for show coefs button
+var doShowCoefs = function(obj){
+  // Get bands as local list from widget
+  PROPS.bandList = app.coefs.coefPanel.widgets().get(3).widgets().get(0).items().getJsArray()
+  // Get date and coefficient mode status
+  PROPS.coefDate = app.coefs.coefsDateBox.widgets().get(1).getValue()
+  PROPS.singleCoefMode = app.coefs.coefPanel.widgets().get(2).widgets().get(0).getValue()
+  
+  // Get current band, coefficient and min/max
+  PROPS.REDcoefBand = app.coefs.coefPanel.widgets().get(3).widgets().get(0).getValue()
+  PROPS.REDcoefCoef = app.coefs.coefPanel.widgets().get(3).widgets().get(1).getValue()
+  PROPS.REDmin = parseFloat(app.coefs.coefPanel.widgets().get(3).widgets().get(2).getValue())
+  PROPS.REDmax = parseFloat(app.coefs.coefPanel.widgets().get(3).widgets().get(3).getValue())
+  
+  PROPS.GREENcoefBand = app.coefs.coefPanel.widgets().get(4).widgets().get(0).getValue()
+  PROPS.GREENcoefCoef = app.coefs.coefPanel.widgets().get(4).widgets().get(1).getValue()
+  PROPS.GREENmin = parseFloat(app.coefs.coefPanel.widgets().get(4).widgets().get(2).getValue())
+  PROPS.GREENmax = parseFloat(app.coefs.coefPanel.widgets().get(4).widgets().get(3).getValue())
+  
+  PROPS.BLUEcoefBand = app.coefs.coefPanel.widgets().get(5).widgets().get(0).getValue()
+  PROPS.BLUEcoefCoef = app.coefs.coefPanel.widgets().get(5).widgets().get(1).getValue()
+  PROPS.BLUEmin = parseFloat(app.coefs.coefPanel.widgets().get(5).widgets().get(2).getValue())
+  PROPS.BLUEmax = parseFloat(app.coefs.coefPanel.widgets().get(5).widgets().get(3).getValue())
+  
+  // Get ccdc coefficients
+  var ccdImage = utils.CCDC.buildCcdImage(PROPS.results, GLOBAL.SEGS.length, PROPS.bandList)
+  
+  // Convert format to output date
+  // TODO: Ask user for input and output formats, or automate
+  var dateParams = {inputFormat: 3, inputDate: PROPS.coefDate, outputFormat: 1}
+  var formattedDate = utils.Dates.convertDate(dateParams)
+  
+  // Normalized intercept requires slope
+  var coefs = utils.CCDC.getMultiCoefs(ccdImage, formattedDate, PROPS.bandList, GLOBAL.COEFS, true, GLOBAL.SEGS, 'after')
+  // var phaseAmpl = utils.CCDC.phaseAmplitude(coefs, PROPS.bandList, '_SIN', '_COS')
+  var phaseAmpl = utils.CCDC.newPhaseAmplitude(coefs, '.*SIN.*', '.*COS.*')
+  var selectedCoef = coefs.addBands(phaseAmpl)//.select(PROPS.coefBand + '_' + PROPS.coefCoef)
+  
+  var REDcoef = PROPS.REDcoefBand + '_' + PROPS.REDcoefCoef
+  var GREENcoef = PROPS.GREENcoefBand + '_' + PROPS.GREENcoefCoef
+  var BLUEcoef = PROPS.BLUEcoefBand + '_' + PROPS.BLUEcoefCoef
+  
+  // If single coef mode, just load that band. Otherwise load RGB
+  if (PROPS.singleCoefMode ==  true){
+    var coefLabel = REDcoef + ' ' + PROPS.coefDate
+    app.main.mapPanel.addLayer({eeObject: selectedCoef,
+                        visParams: {bands: [REDcoef], min:PROPS.REDmin, max: PROPS.REDmax, 
+                                    palette: palettes.matplotlib.viridis[7]},
+                                    name: coefLabel})
+    var legend = uiUtils.generateColorbarLegend(PROPS.REDmin, PROPS.REDmax, 
+                                                palettes.matplotlib.viridis[7], 'horizontal', coefLabel)
+  
+    app.main.mapPanel.add(legend)
+    
+
+  } else {
+    app.main.mapPanel.addLayer({eeObject: selectedCoef,
+                        visParams: {bands: [REDcoef, GREENcoef, BLUEcoef], 
+                        min:[PROPS.REDmin, PROPS.GREENmin, PROPS.BLUEmin], max: [PROPS.REDmax, PROPS.GREENmax, PROPS.BLUEmax]}, 
+                        name: REDcoef + ' ' + GREENcoef + ' ' + BLUEcoef + PROPS.coefDate})
+    
+    // Test HSV viz for fun
+    // var h = selectedCoef.select([REDcoef]).unitScale(PROPS.REDmin, PROPS.REDmax)
+    // var s = selectedCoef.select([GREENcoef]).unitScale(PROPS.GREENmin, PROPS.GREENmax)
+    // var v = selectedCoef.select([BLUEcoef]).unitScale(PROPS.BLUEmin, PROPS.BLUEmax)
+    // mapPanel.addLayer({eeObject:ee.Image([h,s,v]).rgbToHsv(), 
+    //                   name: 'Coefs HSV'+ PROPS.coefDate})
+                    
+  }
+}
+
+
+// Callback functoin for load change button
+var doLoadChg = function(){
+    // Get bands as local list from widget
+    PROPS.bandList = app.change.changePanel.widgets().get(3).widgets().get(1).items().getJsArray()
+    
+    // Get parameters
+    PROPS.changeStart = app.change.sDate.widgets().get(1).getValue()
+    PROPS.changeEnd = app.change.eDate.widgets().get(1).getValue()
+    PROPS.chgBand = app.change.changePanel.widgets().get(3).widgets().get(1).getValue()
+    PROPS.minMagVal = app.change.changePanel.widgets().get(4).widgets().get(1).getValue()
+    PROPS.maxMagVal = app.change.changePanel.widgets().get(5).widgets().get(1).getValue()
+    PROPS.chgLayer = app.change.changePanel.widgets().get(6).widgets().get(1).getValue()
+
+    
+    // Convert format to output date
+    // TODO: Ask user for input and output formats, or automate
+    var startParams = {inputFormat: 3, inputDate: PROPS.changeStart, outputFormat: 1}
+    var endParams = {inputFormat: 3, inputDate: PROPS.changeEnd, outputFormat: 1}
+    var formattedStart = utils.Dates.convertDate(startParams).getInfo()
+    var formattedEnd = utils.Dates.convertDate(endParams).getInfo()
+    
+    // Get ccdc coefficients
+    var ccdImage = utils.CCDC.buildCcdImage(PROPS.results, GLOBAL.SEGS.length, PROPS.bandList)
+    
+    // Find magnitudes, number of breaks and time of max break for the given date range
+    var filteredMags = utils.CCDC.filterMag(ccdImage, formattedStart, formattedEnd, PROPS.chgBand, GLOBAL.SEGS)
+
+    // Add layers, use a dict somehow instead of if statement?
+    if (PROPS.chgLayer === null){
+      print("Select a change layer")
+    } else if (PROPS.chgLayer === 'Max change magnitude'){
+        var minMag = 0
+        var maxMag = 0.15
+        var maxMagLabel = "Max magnitude of change " + PROPS.changeStart + '---' + PROPS.changeEnd
+        app.main.mapPanel.addLayer({eeObject: filteredMags.select('MAG'), 
+                            visParams: {palette:palettes.matplotlib.viridis[7], min: PROPS.minMagVal, max: PROPS.maxMagVal}, 
+                            name: maxMagLabel})  
+        var legend = uiUtils.generateColorbarLegend(PROPS.minMagVal, PROPS.maxMagVal, palettes.matplotlib.viridis[7],
+                                                    'horizontal', maxMagLabel)
+      
+    } else if (PROPS.chgLayer == 'Time of max magnitude'){
+        var maxMagTimeLabel = "Time of max magnitude " + PROPS.changeStart + '---' + PROPS.changeEnd
+        app.main.mapPanel.addLayer({eeObject:filteredMags.select('tBreak'),
+                            visParams: {palette:PALETTES.DATE, min: formattedStart, max:formattedEnd},
+                            name: maxMagTimeLabel})  
+        var legend = uiUtils.generateColorbarLegend(formattedStart, formattedEnd, PALETTES.DATE, 'horizontal', maxMagTimeLabel)
+    } else if (PROPS.chgLayer == 'Number of changes'){  
+        var minChanges = 0
+        var maxChanges = 10
+        var maxChangesLabel = "Number of breaks " + PROPS.changeStart + '---' + PROPS.changeEnd
+        app.main.mapPanel.addLayer({eeObject:filteredMags.select('numTbreak'), 
+                            visParams: {palette:palettes.colorbrewer.YlOrRd[9], min:minChanges, max:maxChanges}, 
+                            name:maxChangesLabel})  
+        var legend = uiUtils.generateColorbarLegend(minChanges, maxChanges, palettes.colorbrewer.YlOrRd[9], 'horizontal', maxChangesLabel)
+    } else {
+        print("Unspecified error")
+    }
+    
+    app.main.mapPanel.add(legend)
+    
+}
+
+// Load first change
+var doLoadFirstChg = function(){
+  var firstChg = PROPS.results.select('tBreak').arrayReduce(ee.Reducer.first(), [0]).arrayFlatten([['first']]).selfMask()
+  var dateParams = {inputFormat: 3, inputDate: PROPS.startDate, outputFormat: 1}
+  var dateParams2 = {inputFormat: 3, inputDate: PROPS.endDate, outputFormat: 1}
+  var formattedDate = utils.Dates.convertDate(dateParams)
+  var formattedDate2 = utils.Dates.convertDate(dateParams2)
+  // Convert to single evaluate with a dictionary
+  formattedDate.evaluate(function(x){
+    formattedDate2.evaluate(function(y){
+    app.main.mapPanel.addLayer(firstChg, {palette: PALETTES.DATE, min:x, max:y}, 'First change')
+    var legend = uiUtils.generateColorbarLegend(x, y, PALETTES.DATE, 'horizontal', 'Date of first change')
+    app.main.mapPanel.add(legend)
+    })
+  })
+  
+}
+
+var doLoadLastChg = function(){
+  var lastChg = PROPS.results.select('tBreak').arrayReduce(ee.Reducer.max(), [0]).arrayFlatten([['last']]).selfMask()
+  
+  var dateParams = {inputFormat: 3, inputDate: PROPS.startDate, outputFormat: 1}
+  var dateParams2 = {inputFormat: 3, inputDate: PROPS.endDate, outputFormat: 1}
+  var formattedDate = utils.Dates.convertDate(dateParams)
+  var formattedDate2 = utils.Dates.convertDate(dateParams2)
+  
+  // Convert to single evaluate with a dictionary
+  formattedDate.evaluate(function(x){
+    formattedDate2.evaluate(function(y){
+    app.main.mapPanel.addLayer(lastChg, {palette: PALETTES.DATE, min:x, max:y}, 'Last change')
+    var legend = uiUtils.generateColorbarLegend(x, y, PALETTES.DATE, 'horizontal', 'Date of last change')
+    app.main.mapPanel.add(legend)
+    })
+  })
+}
+
+// Callback function for clicking on the map
+
+function mapCallback(){
+  // Retrieve ccdc arguments
+  ccdParams.breakpointBands = BPBANDS
+  ccdParams.tmaskBands= TMBANDS
+  ccdParams.dateFormat = dateFormat
+  ccdParams.lambda = parseFloat(app.ccd.lambda.widgets().get(1).getValue())
+  ccdParams.maxIterations = parseInt(app.ccd.maxIter.widgets().get(1).getValue())
+  ccdParams.minObservations = parseInt(app.ccd.minObs.widgets().get(1).getValue())
+  ccdParams.chiSquareProbability = parseFloat(app.ccd.chiSq.widgets().get(1).getValue())
+  ccdParams.minNumOfYearsScaler = parseFloat(app.ccd.minYears.widgets().get(1).getValue())
+  
+  // Retrieve run and viz arguments
+  var currentCol = app.ccd.collectionSelector.widgets().get(1).getValue()
+  runParams.landsatCol = landsatCollections[currentCol]
+  runParams.bandSelect = app.ccd.bandSelector.widgets().get(1).getValue()
+  runParams.sDate = app.ccd.sDate.widgets().get(1).getValue()
+  runParams.eDate = app.ccd.eDate.widgets().get(1).getValue()
+  runParams.nSegs = parseInt(app.viz.nSegs.widgets().get(1).getValue())
+  
+  vizParams.tsType = app.viz.tsType.widgets().get(1).getValue()
+  vizParams.red = app.viz.redBox.widgets().get(0).getValue()
+  vizParams.green = app.viz.greenBox.widgets().get(0).getValue()
+  vizParams.blue = app.viz.blueBox.widgets().get(0).getValue()
+  vizParams.redMin = app.viz.redBox.widgets().get(1).getValue()
+  vizParams.greenMin = parseFloat(app.viz.greenBox.widgets().get(1).getValue())
+  vizParams.blueMin = parseFloat(app.viz.blueBox.widgets().get(1).getValue())
+  vizParams.redMax = parseFloat(app.viz.redBox.widgets().get(2).getValue())
+  vizParams.greenMax = parseFloat(app.viz.greenBox.widgets().get(2).getValue())
+  vizParams.blueMax = parseFloat(app.viz.blueBox.widgets().get(2).getValue())
+}
+
+// Callback for button to load ancillary data
+function loadAncillary(){
+  // Support vector data only to simplify things
+  var assetPath = app.misc.dataPath.widgets().get(1).getValue()
+  var test = ee.String(ee.Algorithms.ObjectType(assetPath)).compareTo("FeatureCollection")
+  ee.Algorithms.If(test.eq(0), app.main.mapPanel.addLayer(ee.FeatureCollection(assetPath), {}, "Ancillary dataset"))
+}
+
+
+// Callback to navigate to lat/lon
+function doGoLatLon(){
+   var lat = app.misc.lat.widgets().get(1).getValue()
+   var lon = app.misc.lon.widgets().get(1).getValue()
+   var label = "Lat: " + lat + " Lon: " + lon
+   var point = ee.Geometry.Point([parseFloat(lon), parseFloat(lat)])
+   app.main.mapPanel.addLayer(point, {}, label)
+   app.main.mapPanel.centerObject(point, 18)
+   
+  }
+
+//////////////// CREATE INTERFACE ////////////////
+
+var initApp = function(){
+  ui.root.clear()
+  
+  app.main = []
+  app.loader = []
+  app.synt = []
+  app.coefs = []
+  app.change = []
+  app.export = []
+  app.ccd = []
+  app.viz = []
+  app.misc = []
+  app.main.mainPanel = ui.Panel()
+  app.main.mapPanel = ui.Map({onClick: mapCallback, style: {height: '80%', cursor: 'crosshair'}})
+  app.main.mapPanel.setOptions('HYBRID');
+  app.main.mapPanel.setControlVisibility({zoomControl:false, layerList:true})
+
+  var width = visLabels.width
+  // app.main.mapPanel.addLayer(table)
+  
+  //////////////// LOAD PANEL WIDGETS ////////////////
+  app.loader.imOrCol = ui.Panel(
+    [
+      ui.Label({value:'Image or Collection?', style:{stretch: 'horizontal', color:'black'}}),
+      ui.Select({items: ['Image', 'Image Collection'], value: 'Image', style:{stretch: 'horizontal'}})  
+    ],
+    ui.Panel.Layout.Flow('horizontal'),
+    horizontalStyle
+  );
+  
+  app.loader.coefImage = ui.Panel(
+    [
+      ui.Label({value:'CCDC coefficients', style:{stretch: 'horizontal', color:'black'}}),
+      ui.Textbox({value:'projects/GLANCE/RESULTS/CHANGEDETECTION/SA/Rondonia_example', style:{stretch: 'horizontal'}}) 
+    ],
+    ui.Panel.Layout.Flow('horizontal'),
+    horizontalStyle
+  );
+  
+  app.loader.filterBox = ui.Panel(
+    [
+      ui.Label({value:'Filter CCDC run', style:{stretch: 'horizontal', color:'black'}}),
+      ui.Textbox({value:'', style:{stretch: 'horizontal'}}) 
+    ],
+    ui.Panel.Layout.Flow('horizontal'),
+    horizontalStyle
+  );
+  
+  app.loader.infoBox = ui.Panel(
+    [
+      ui.Label({value:'Available bands are: ', style: {stretch: 'both'}}),
+      ui.Label({value: 'Suspected date format is: ', style:{stretch: 'both'}})  
+    ],
+    ui.Panel.Layout.Flow('vertical'),
+    horizontalStyle
+  )
+
+  app.loader.loadButton = ui.Button({label:'Load image', style: {width: '95%'}, onClick: doLoad})
+  
+  
+  //////////////// SYNT PANEL WIDGETS ////////////////
+  app.synt.dateBox = ui.Panel(
+    [
+      ui.Label({value:'Date', style:{stretch: 'horizontal', color:'black'}}),
+      ui.Textbox({value:'2001-01-01', style:{stretch: 'horizontal'}}) 
+    ],
+    ui.Panel.Layout.Flow('horizontal'),
+    horizontalStyle
+  );
+  
+  app.synt.minBox = ui.Panel(
+    [
+      ui.Label({value:'Stretch (Min)', style:{stretch: 'horizontal', color:'black'}}),
+      ui.Textbox({value:'0', style:{stretch: 'horizontal'}}) 
+    ],
+    ui.Panel.Layout.Flow('horizontal'),
+    {stretch: 'horizontal'}
+  );
+  
+  app.synt.maxBox = ui.Panel(
+    [
+      ui.Label({value:'Stretch (Max)', style:{stretch: 'horizontal', color:'black'}}),
+      ui.Textbox({value:'0.6', style:{stretch: 'horizontal'}}) 
+    ],
+    ui.Panel.Layout.Flow('horizontal'),
+    {stretch: 'horizontal'}
+  );
+  
+  app.synt.createSynt = ui.Button({label: 'Create Image', style: {width: '95%'}, onClick: doCreateSynt})
+  
+  
+  //////////////// COEF PANEL WIDGETS ////////////////
+  app.coefs.singleCoefMode = ui.Panel(
+    [
+      ui.Checkbox({label: 'Single coefficient?', onChange:(function(checked){
+        if (checked == true){
+          app.coefs.coefPanel.widgets().get(4).widgets().get(0).setDisabled(true)
+          app.coefs.coefPanel.widgets().get(4).widgets().get(1).setDisabled(true)
+          app.coefs.coefPanel.widgets().get(4).widgets().get(2).setDisabled(true)
+          app.coefs.coefPanel.widgets().get(4).widgets().get(3).setDisabled(true)
+          app.coefs.coefPanel.widgets().get(5).widgets().get(0).setDisabled(true)
+          app.coefs.coefPanel.widgets().get(5).widgets().get(1).setDisabled(true)
+          app.coefs.coefPanel.widgets().get(5).widgets().get(2).setDisabled(true)
+          app.coefs.coefPanel.widgets().get(5).widgets().get(3).setDisabled(true)
+        } else {
+          app.coefs.coefPanel.widgets().get(4).widgets().get(0).setDisabled(false)
+          app.coefs.coefPanel.widgets().get(4).widgets().get(1).setDisabled(false)
+          app.coefs.coefPanel.widgets().get(4).widgets().get(2).setDisabled(false)
+          app.coefs.coefPanel.widgets().get(4).widgets().get(3).setDisabled(false)
+          app.coefs.coefPanel.widgets().get(5).widgets().get(0).setDisabled(false)
+          app.coefs.coefPanel.widgets().get(5).widgets().get(1).setDisabled(false)
+          app.coefs.coefPanel.widgets().get(5).widgets().get(2).setDisabled(false)
+          app.coefs.coefPanel.widgets().get(5).widgets().get(3).setDisabled(false)
+        } 
+      })})
+    
+    ]  
+  )
+  
+  app.coefs.coefsDateBox = ui.Panel(
+    [
+      ui.Label({value:'Date', style:{stretch: 'horizontal',color:'black'}}),
+      ui.Textbox({value:'2001-01-01', style:{stretch: 'horizontal'}}) 
+    ],
+    ui.Panel.Layout.Flow('horizontal'),
+    horizontalStyle
+  );
+  
+  app.coefs.stretchMin = ui.Panel(
+    [
+      ui.Label({value:'Stretch (Min)', style:{stretch: 'horizontal', color:'black'}}),
+      ui.Textbox({value:'0', style:{stretch: 'horizontal'}}) 
+    ],
+    ui.Panel.Layout.Flow('horizontal'),
+    {stretch: 'horizontal'}
+  );
+  
+  app.coefs.stretchMax = ui.Panel(
+    [
+      ui.Label({value:'Stretch (Max)', style:{stretch: 'horizontal', color:'black'}}),
+      ui.Textbox({value:'1', style:{stretch: 'horizontal'}}) 
+    ],
+    ui.Panel.Layout.Flow('horizontal'),
+    {stretch: 'horizontal'}
+  );
+  
+  
+  app.coefs.showCoefs = ui.Button({label: 'Show image', style: {width: '95%'}, onClick: doShowCoefs})
+
+  
+  //////////////// CHANGE PANEL ////////////////
+  app.change.sDate = ui.Panel(
+    [
+      ui.Label({value:'Start date' , style:{stretch: 'horizontal',color:'black'}}),
+      ui.Textbox({value:'1986-01-01', style:{stretch: 'horizontal'}}) 
+    ],
+    ui.Panel.Layout.Flow('horizontal'),
+    {stretch: 'horizontal'}
+  )
+  
+  app.change.eDate = ui.Panel(
+    [
+      ui.Label({value:'End date' , style:{stretch: 'horizontal',color:'black'}}),
+      ui.Textbox({value:'2010-01-01', style:{stretch: 'horizontal'}}) 
+    ],
+    ui.Panel.Layout.Flow('horizontal'),
+    {stretch: 'horizontal'}
+  )
+  
+  app.change.minMag = ui.Panel(
+    [
+      ui.Label({value:'Min magnitude' , style:{stretch: 'horizontal',color:'black'}}),
+      ui.Textbox({value:0, style:{stretch: 'horizontal'}}) 
+    ],
+    ui.Panel.Layout.Flow('horizontal'),
+    {stretch: 'horizontal'}
+  )
+  
+  app.change.maxMag = ui.Panel(
+    [
+      ui.Label({value:'Max magnitude' , style:{stretch: 'horizontal',color:'black'}}),
+      ui.Textbox({value:0.15, style:{stretch: 'horizontal'}}) 
+    ],
+    ui.Panel.Layout.Flow('horizontal'),
+    {stretch: 'horizontal'}
+  )
+  
+  app.change.changeSelect = uiUtils.generateSelectorPanel('Change layer', 
+                                ['Max change magnitude', 'Time of max magnitude', 'Number of changes'])
+  
+  // Load changes
+  app.change.loadChgButton = ui.Button({
+    label: 'Load changes',
+    style:{stretch: 'horizontal'},
+    onClick: doLoadChg})
+  
+  // Load first change
+  app.change.loadFirstChgButton = ui.Button({
+    label: 'Load first change',
+    style:{stretch: 'horizontal'},
+    onClick: doLoadFirstChg})
+  
+  // Load last change
+  app.change.loadLastChgButton = ui.Button({
+    label: 'Load last change',
+    style:{stretch: 'horizontal'},
+    onClick: doLoadLastChg})
+  
+  //////////////// LEFT PANEL FOR SINGLE TS VISUALIZATION ////////////////
+
+  // Start date for ccdc
+  app.ccd.sDate = ui.Panel(
+      [
+        ui.Label({value:'Start date' , style:{stretch: 'horizontal',color:'black'}}),
+        ui.Textbox({value:'1986-01-01', style:{stretch: 'horizontal'}}) 
+      ],
+      ui.Panel.Layout.Flow('horizontal'),
+      {stretch: 'horizontal'}
+  )
+    
+  //End date for ccdc
+  app.ccd.eDate = ui.Panel(
+      [
+        ui.Label({value:'End date' , style:{stretch: 'horizontal',color:'black'}}),
+        ui.Textbox({value:'2023-01-01', style:{stretch: 'horizontal'}}) 
+      ],
+      ui.Panel.Layout.Flow('horizontal'),
+      {stretch: 'horizontal'}
+  )
+  
+  // Lambda
+  app.ccd.lambda = ui.Panel(
+      [
+        ui.Label({value:'Lambda', style:{stretch: 'horizontal',color:'black'}}),
+        ui.Textbox({value: 0.002, style:{stretch: 'horizontal'}}) 
+      ],
+      ui.Panel.Layout.Flow('horizontal'),
+      {stretch: 'horizontal'}
+  )
+  
+  // maxIterations
+  app.ccd.maxIter = ui.Panel(
+      [
+        ui.Label({value:'Max iterations', style:{stretch: 'horizontal',color:'black'}}),
+        ui.Textbox({value: 10000, style:{stretch: 'horizontal'}}) 
+      ],
+      ui.Panel.Layout.Flow('horizontal'),
+      {stretch: 'horizontal'}
+  )
+  
+  
+  // minObservations
+  app.ccd.minObs = ui.Panel(
+      [
+        ui.Label({value:'Min observations', style:{stretch: 'horizontal',color:'black'}}),
+        ui.Textbox({value: 6, style:{stretch: 'horizontal'}}) 
+      ],
+      ui.Panel.Layout.Flow('horizontal'),
+      {stretch: 'horizontal'}
+  )
+  
+  // chiSquareProbability
+  app.ccd.chiSq = ui.Panel(
+      [
+        ui.Label({value:'Chi square prob', style:{stretch: 'horizontal',color:'black'}}),
+        ui.Textbox({value: 0.99, style:{stretch: 'horizontal'}}) 
+      ],
+      ui.Panel.Layout.Flow('horizontal'),
+      {stretch: 'horizontal'}
+  )
+  
+  // minNumOfYearsScaler
+  app.ccd.minYears = ui.Panel(
+      [
+        ui.Label({value:'Min years scaler', style:{stretch: 'horizontal',color:'black'}}),
+        ui.Textbox({value: 1.33, style:{stretch: 'horizontal'}}) 
+      ],
+      ui.Panel.Layout.Flow('horizontal'),
+      {stretch: 'horizontal'}
+  )
+  
+  // Band selector
+  app.ccd.bandSelector = ui.Panel(
+      [
+        ui.Label({value: 'Select band', style:{stretch: 'horizontal', color:'black'}}),
+        ui.Select({items: FULLBANDS, value: 'SWIR1', style:{stretch: 'horizontal'}}) 
+      ],
+      ui.Panel.Layout.Flow('horizontal'),
+      {stretch: 'horizontal'}
+    )
+  
+  // Collection selector
+  app.ccd.collectionSelector = ui.Panel(
+      [
+        ui.Label({value: 'Select collection', style:{stretch: 'horizontal', color:'black'}}),
+        ui.Select({items: ['Landsat C1', 'Landsat C2'], value: 'Landsat C2', style:{stretch: 'horizontal'}}) 
+      ],
+      ui.Panel.Layout.Flow('horizontal'),
+      {stretch: 'horizontal'}
+    )
+
+  ////// VIZ PARAMS  
+  
+  // Select DOY plot or regular
+  app.viz.tsType = ui.Panel(
+      [
+        ui.Label({value: 'Chart type', style:{stretch: 'horizontal', color:'black'}}),
+        ui.Select({items: ['Time series', 'DOY'], value: 'Time series', style:{stretch: 'horizontal'}}) 
+      ],
+      ui.Panel.Layout.Flow('horizontal'),
+      {stretch: 'horizontal'}
+    )
+  
+  
+  // Number of segments for chart
+  app.viz.nSegs = ui.Panel(
+      [
+        ui.Label({value:'Num segments' , style:{stretch: 'horizontal',color:'black'}}),
+        ui.Textbox({value:6, style:{stretch: 'horizontal'}}) 
+      ],
+      ui.Panel.Layout.Flow('horizontal'),
+      {stretch: 'horizontal'}
+  )
+  
+  var coefBandPanelGenerator = function(){ return ui.Panel([
+        ui.Select({items:FULLBANDS, style:{stretch: 'horizontal'}}),
+        ui.Textbox({value: 0, style:{stretch: 'horizontal'}}) ,
+        ui.Textbox({value: 0.6, style:{stretch: 'horizontal'}}) 
+      ],
+      ui.Panel.Layout.Flow('horizontal'),
+      horizontalStyle)}  
+    
+  app.viz.redBox = coefBandPanelGenerator()
+  app.viz.greenBox = coefBandPanelGenerator()
+  app.viz.blueBox = coefBandPanelGenerator()
+  
+  app.viz.redBox.widgets().get(0).setValue('SWIR1')
+  app.viz.greenBox.widgets().get(0).setValue('NIR')
+  app.viz.blueBox.widgets().get(0).setValue('RED')
+  
+  ////// ANCILLARY DATA  
+  app.misc.dataPath = ui.Panel(
+      [
+        ui.Label({value:'Asset path' , style:{stretch: 'horizontal',color:'black'}}),
+        ui.Textbox({value:'', style:{stretch: 'horizontal'}}) 
+      ],
+      ui.Panel.Layout.Flow('horizontal'),
+      {stretch: 'horizontal'}
+  )
+  
+  app.misc.loadButton = ui.Button({label:'Load asset', style: {width: '95%'}, onClick: loadAncillary})
+  
+  // Navigate to lat/lon panel
+  app.misc.lat = ui.Panel(
+      [
+        ui.Label({value:'Lat' , style:{stretch: 'horizontal',color:'black'}}),
+        ui.Textbox({value:'0', style:{stretch: 'horizontal', width: '60%'}}) 
+      ],
+      ui.Panel.Layout.Flow('horizontal'),
+      {stretch: 'horizontal'}
+  )
+  
+  app.misc.lon = ui.Panel(
+      [
+        ui.Label({value:'Lon' , style:{stretch: 'horizontal',color:'black'}}),
+        ui.Textbox({value:'0', style:{stretch: 'horizontal', width: '60%'}}) 
+      ],
+      ui.Panel.Layout.Flow('horizontal'),
+      {stretch: 'horizontal'}
+  )
+  
+  app.misc.goLatLon = ui.Button({label:'Go!', onClick: doGoLatLon, style:{stretch: 'horizontal'}})
+  
+  app.misc.latLon = ui.Panel([app.misc.lat, app.misc.lon],
+                    ui.Panel.Layout.Flow('horizontal'),
+                    {stretch: 'horizontal'})
+  
+  app.misc.clearMap = ui.Button({label:'Clear map layers', style: {width: '95%'}, 
+                                onClick: function(){
+                                  app.main.mapPanel.widgets().reset()
+                                  app.main.mapPanel.layers().reset()
+                                  }
+                               })
+
+  var citationLabel = 'Arévalo, P., Bullock, E.L., Woodcock, C.E., Olofsson, P., 2020. \
+  A Suite of Tools for Continuous Land Change Monitoring in Google Earth Engine. \
+  Front. Clim. 2.' 
+  var citationURL = 'https://doi.org/10.3389/fclim.2020.576740'
+  app.misc.citation = ui.Label(citationLabel, {}, citationURL)
+
+  // Make CCDC control Panels
+  app.ccd.controlPanel = ui.Panel({style: {width: '100%'},
+                            widgets: [ui.Label('CCD TS controls', visLabels),
+                            app.ccd.collectionSelector, app.ccd.bandSelector, 
+                            app.ccd.sDate, app.ccd.eDate, app.ccd.lambda,
+                            app.ccd.maxIter, app.ccd.minObs, app.ccd.chiSq, app.ccd.minYears
+                            ]})
+                        
+  app.viz.controlPanel = ui.Panel({style: {width: '100%'},
+                            widgets: [ui.Label('Visualization params', visLabels), app.viz.tsType,
+                            app.viz.nSegs,app.viz.redBox, app.viz.greenBox, app.viz.blueBox]})
+                            
+  app.misc.controlPanel = ui.Panel({style: {width: '100%'},
+                          widgets: [ui.Label('Other controls', visLabels), app.misc.dataPath, 
+                          app.misc.loadButton, app.misc.latLon, app.misc.goLatLon, app.misc.clearMap,
+                          ui.Label('Please cite as:',visLabels),
+                          app.misc.citation]})
+
+  
+  //////////////// GLOBAL PANEL SETUP ////////////////
+  app.loader.loadPanel = ui.Panel({style: {width: '100%'}, 
+                            widgets: [ui.Label('Load CCDC results',visLabels),
+                            app.loader.imOrCol, app.loader.coefImage, app.loader.filterBox, app.loader.loadButton, app.loader.infoBox]})
+  
+  app.synt.synthPanel = ui.Panel({style: {width: '100%'},
+                            widgets: [ui.Label('Create synthetic image',visLabels),
+                            app.synt.dateBox,  app.synt.minBox, app.synt.maxBox, app.synt.createSynt]})
+  app.coefs.coefPanel = ui.Panel({style: {width: '100%'},
+                            widgets: [ui.Label('Visualize coefficients',visLabels),
+                            app.coefs.coefsDateBox, app.coefs.singleCoefMode, app.coefs.showCoefs]})
+  app.change.changePanel = ui.Panel({style: {width: '100%'},
+                            widgets: [ui.Label('Visualize change',visLabels),
+                            app.change.sDate, app.change.eDate, app.change.minMag, app.change.maxMag, 
+                            app.change.changeSelect, app.change.loadChgButton]})
+                            
+                            
+  app.main.rightPanel = ui.Panel({style: {width: '15%'},
+    widgets: [app.loader.loadPanel, app.synt.synthPanel, app.coefs.coefPanel, app.change.changePanel],
+    layout: ui.Panel.Layout.Flow('vertical')
+  })
+  
+  app.main.leftPanel = ui.Panel({style: {width: '10%'},
+    widgets: [app.ccd.controlPanel,  app.viz.controlPanel, app.misc.controlPanel],
+    layout: ui.Panel.Layout.Flow('vertical')
+  })
+  
+  
+  app.main.ccdChartPanel = uiUtils.getTSChart(app.main.mapPanel, ccdParams, runParams, vizParams)
+  app.main.centerPanel = ui.Panel({style: {width: '80%'}, widgets:[ui.SplitPanel(app.main.mapPanel, app.main.ccdChartPanel, 'vertical', false, {height:"95%"})]})
+
+  var mainPanel = ui.Panel({style: {width: '900%'}, widgets:[ui.SplitPanel(app.main.centerPanel, app.main.rightPanel, 'horizontal')]})
+  var fullUI = ui.SplitPanel(app.main.leftPanel, mainPanel, 'horizontal')
+  ui.root.add(fullUI)
+
+
+}
+
+initApp()
+
+// users/openmrv/MRV/CCDC_Tile_Cambodia
+
+
+app.main.mapPanel.centerObject(point_test,18);
+

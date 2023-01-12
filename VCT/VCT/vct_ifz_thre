@@ -1,0 +1,980 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var table = ee.FeatureCollection("users/zsy11600/Jiangxi/Boundary/JxLine"),
+    sample2000 = ee.FeatureCollection("users/zsy11600/Jiangxi/VCT/Forest_Sample_2000"),
+    sample2010 = ee.FeatureCollection("users/zsy11600/Jiangxi/VCT/Forest_Sample_2010"),
+    sample2020 = ee.FeatureCollection("users/zsy11600/Jiangxi/VCT/Forest_Sample_2020"),
+    testPoint = 
+    /* color: #d63000 */
+    /* shown: false */
+    ee.Geometry.Point([116.48290248147845, 27.89552971333974]),
+    geometry = 
+    /* color: #fffdfd */
+    /* shown: false */
+    ee.Geometry({
+      "type": "GeometryCollection",
+      "geometries": [
+        {
+          "type": "Point",
+          "coordinates": [
+            114.03400310085063,
+            32.74677654270695
+          ]
+        },
+        {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                114.03390654132609,
+                32.746794590097544
+              ],
+              [
+                114.03402053520922,
+                32.746794590097544
+              ],
+              [
+                114.03401382968669,
+                32.746872419427575
+              ],
+              [
+                114.03390385911707,
+                32.74686790758423
+              ]
+            ]
+          ],
+          "geodesic": true,
+          "evenOdd": true
+        }
+      ],
+      "coordinates": []
+    }),
+    geometry2 = 
+    /* color: #0b4a8b */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[114.03401382968669, 32.746870163505946],
+          [114.03401382968669, 32.746803613791485],
+          [114.03409563706164, 32.746803613791485],
+          [114.03409563706164, 32.746870163505946]]], null, false),
+    geometry3 = 
+    /* color: #ffc82d */
+    /* shown: false */
+    ee.Geometry({
+      "type": "GeometryCollection",
+      "geometries": [
+        {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                114.03404869840388,
+                32.746801357868065
+              ],
+              [
+                114.03405406282191,
+                32.7467584953127
+              ],
+              [
+                114.03409831927065,
+                32.746760751237204
+              ],
+              [
+                114.03409027264361,
+                32.74679910194463
+              ]
+            ]
+          ],
+          "geodesic": true,
+          "evenOdd": true
+        },
+        {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                114.0340513806129,
+                32.746757367350455
+              ],
+              [
+                114.03405540392642,
+                32.74672127255052
+              ],
+              [
+                114.03409966037516,
+                32.74672014458779
+              ],
+              [
+                114.03409697816615,
+                32.74675962327496
+              ]
+            ]
+          ],
+          "geodesic": true,
+          "evenOdd": true
+        },
+        {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                114.03399103091006,
+                32.74671563273671
+              ],
+              [
+                114.03399371311907,
+                32.74668179384638
+              ],
+              [
+                114.03408088491206,
+                32.74668292180959
+              ],
+              [
+                114.03407552049403,
+                32.74672127255052
+              ]
+            ]
+          ],
+          "geodesic": true,
+          "evenOdd": true
+        },
+        {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                114.03389983580355,
+                32.74670435310802
+              ],
+              [
+                114.03394945667033,
+                32.746705481070954
+              ],
+              [
+                114.0339454333568,
+                32.746732552177065
+              ],
+              [
+                114.03392263458018,
+                32.74673480810222
+              ],
+              [
+                114.03392397568469,
+                32.74679120621209
+              ],
+              [
+                114.033890448072,
+                32.74679007825025
+              ]
+            ]
+          ],
+          "geodesic": true,
+          "evenOdd": true
+        },
+        {
+          "type": "LineString",
+          "coordinates": [
+            [
+              114.03397091434245,
+              32.74671112088542
+            ],
+            [
+              114.03397091434245,
+              32.74669081755172
+            ],
+            [
+              114.03367184803729,
+              32.74667164217676
+            ],
+            [
+              114.03367000483686,
+              32.74686677995638
+            ],
+            [
+              114.03431775831396,
+              32.746901746736924
+            ],
+            [
+              114.03431705125314,
+              32.74730942610171
+            ],
+            [
+              114.03467249513695,
+              32.747324281408076
+            ],
+            [
+              114.03468724728653,
+              32.747197950348294
+            ],
+            [
+              114.03636800547328,
+              32.74724110088336
+            ],
+            [
+              114.03636129995074,
+              32.74741818982201
+            ],
+            [
+              114.03467150827136,
+              32.74736743188194
+            ],
+            [
+              114.03467284937587,
+              32.74732231368874
+            ]
+          ],
+          "geodesic": true
+        },
+        {
+          "type": "LinearRing",
+          "coordinates": [
+            [
+              114.0347901628032,
+              32.74726709957274
+            ],
+            [
+              114.03479284501222,
+              32.74719716628478
+            ],
+            [
+              114.0347003088012,
+              32.74719265445784
+            ],
+            [
+              114.03470299101022,
+              32.74726597161694
+            ],
+            [
+              114.0347901628032,
+              32.74726709957274
+            ]
+          ],
+          "geodesic": true
+        },
+        {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                114.03403713309393,
+                32.7505208555616
+              ],
+              [
+                114.03392066182103,
+                32.75167097652462
+              ],
+              [
+                114.03381069125142,
+                32.751659697523394
+              ],
+              [
+                114.0339340728661,
+                32.750509231894775
+              ]
+            ]
+          ],
+          "geodesic": true,
+          "evenOdd": true
+        },
+        {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                114.03430290048347,
+                32.749183589387414
+              ],
+              [
+                114.0348500711225,
+                32.74922983456892
+              ],
+              [
+                114.03483263676391,
+                32.749427222268785
+              ],
+              [
+                114.03428412502036,
+                32.74937646547346
+              ]
+            ]
+          ],
+          "geodesic": true,
+          "evenOdd": true
+        }
+      ],
+      "coordinates": []
+    }),
+    ESA10M = ee.ImageCollection("ESA/WorldCover/v100"),
+    region1 = 
+    /* color: #98ff00 */
+    /* shown: false */
+    ee.Geometry.Point([114.62690084458275, 24.807547750906675]),
+    No1 = 
+    /* color: #d63000 */
+    /* shown: false */
+    ee.Geometry.Point([114.144324748334, 25.844211112547416]),
+    No2 = /* color: #98ff00 */ee.Geometry.Point([116.4793840096687, 27.89059602460537]),
+    No3 = 
+    /* color: #dead00 */
+    /* shown: false */
+    ee.Geometry.Point([114.8831897363762, 24.799343514181583]),
+    No4 = 
+    /* color: #ffc82d */
+    /* shown: false */
+    ee.Geometry.Point([114.1552555712078, 27.763081495926333]),
+    No5 = 
+    /* color: #d63000 */
+    /* shown: false */
+    ee.Geometry.Point([114.97824686711172, 27.024388495117837]),
+    SFP = ee.FeatureCollection("users/zsy11600/ChinaTree/Sencondary_forest_points");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+
+/*
+Vct algorithms ,it mainly include IFZ calculation, and difine stable forest by Vct 
+
+2021.12.21 by zhang shaoyu
+
+the final code 2022.04.12
+*/
+
+//检查验证点
+
+// add the feature ------------------------------------------------------------
+var samples = table;
+var sample = samples.filterMetadata('ID','equals','1').first();
+
+
+var point_test = sample.geometry();
+
+
+var testPoint3 = No2;  //所有图表都使用这个变量
+
+
+
+//var testPoint = ee.Geometry.Point([114.108,25.542]); 
+Map.centerObject(testPoint3,16);
+Map.addLayer(testPoint3,{},"testPoint");
+
+
+// 定义影像集参数
+var roi = table;
+
+ 
+ //cal the ndvi  
+function NDVI(img){
+  var ndvi = img.normalizedDifference(['B4','B3'])
+                .set('system:time_start',img.get('system:time_start'))
+                .rename('NDVI');
+  return img.addBands(ndvi)
+}
+
+function NBR(img){
+  var nbr = img.normalizedDifference(['B4','B7'])
+              .set('system:time_start',img.get('system:time_start'))
+              .rename('NBR');
+  return img.addBands(nbr)
+}
+
+//add index to imgcol
+//var Srcol = annualSRcollection.map(NDVI).map(NBR);
+
+
+//print('SrCol',Srcol);
+
+
+
+
+
+
+
+//the second way to get the srcol--------------------------------------------
+var startDate = ee.Date.fromYMD(1985,1,1);
+var endDate = ee.Date.fromYMD(2021,12,31);
+var table = table;
+
+
+
+/*
+ function of  get acquiring Landsat SR imageCollection
+*/
+function getImageCollection(studyArea,startDate,endDate){
+
+  var sensorBandDictLandsatSR =ee.Dictionary({
+                        L8 : ee.List([1,2,3,4,5,7,6]),
+                        L7 : ee.List([0,1,2,3,4,5,6]),
+                        L5 : ee.List([0,1,2,3,4,5,6])
+  });
+  var bandNamesLansatSR = ee.List(['blue','green','red','nir','swir1','B10','swir2']);
+  
+  var l5sr = ee.ImageCollection('LANDSAT/LT05/C01/T1_SR')
+              .filterDate(startDate,endDate)
+              .filterBounds(studyArea)
+              .filterMetadata('CLOUD_COVER','less_than',60)
+              .map(rmCloud)
+              .select(sensorBandDictLandsatSR.get('L5'), bandNamesLansatSR);
+  var l7sr = ee.ImageCollection('LANDSAT/LE07/C01/T1_SR')
+              .filterDate(startDate,endDate)
+              .filterDate('2012-01-02','2012-12-30')
+              .filterBounds(studyArea)
+              .filterMetadata('CLOUD_COVER','less_than',60)
+              .map(rmCloud)
+              .select(sensorBandDictLandsatSR.get('L7'), bandNamesLansatSR)
+              .map(function(image){
+                  var filled1a = image.focal_mean(2, 'square', 'pixels', 1)
+                  return filled1a.blend(image)
+                          .set('system:time_start',image.get('system:time_start'));
+                  });
+  var l8sr = ee.ImageCollection('LANDSAT/LC08/C01/T1_SR')
+              .filterDate(startDate,endDate)
+              .filterBounds(studyArea)
+              .filterMetadata('CLOUD_COVER','less_than',60)
+              .map(rmCloud)
+              .select(sensorBandDictLandsatSR.get('L8'), bandNamesLansatSR);
+  var ls = ee.ImageCollection(l5sr.merge(l7sr).merge(l8sr));
+  return ls;
+}
+
+
+
+
+
+
+/*
+function of remove cloud select one way of remove cloud ways
+*/
+var cloudMaskL457 = function(image) {
+  var qa = image.select('pixel_qa');
+  // If the cloud bit (5) is set and the cloud confidence (7) is high
+  // or the cloud shadow bit is set (3), then it's a bad pixel.
+  var cloud = qa.bitwiseAnd(1 << 5)
+                  .and(qa.bitwiseAnd(1 << 7))
+                  .or(qa.bitwiseAnd(1 << 3));
+  // Remove edge pixels that don't occur in all bands
+  var mask2 = image.mask().reduce(ee.Reducer.min());
+  return image.updateMask(cloud.not()).updateMask(mask2);
+};
+
+
+//L8 cloud mask
+  function maskCloud(image) {
+    var cloudBit = 5;
+    var cloudshadowBit = 3;
+    var cloudBitMask = Math.pow(2, cloudBit); // 0x400
+    var cloudshadowBitMask = Math.pow(2, cloudshadowBit); // 0x800
+    function mask_landsat_clouds(image) {
+    var qa = image.select('pixel_qa');
+    var mask = qa.bitwiseAnd(cloudBitMask).eq(0).and( // no clouds
+              qa.bitwiseAnd(cloudshadowBitMask).eq(0)); // no cloudshadow
+    return image.updateMask(mask);
+  }
+    return image;
+  }
+  
+//去云的算法 
+function rmCloud (image){
+  var qa = image.select('pixel_qa')
+  var cloudMask = qa.bitwiseAnd(1 << 3).eq(0)
+  var cloudShadowMask = qa.bitwiseAnd(1 << 5).eq(0)
+  var mask_all = cloudMask.and(cloudShadowMask)
+  return image.updateMask(mask_all)
+}
+
+var ls = getImageCollection(table,startDate,endDate);
+
+//print('LS_ImageCollection',ls);
+
+var years = ee.List.sequence(1985,2021);//difine the date range
+var YearCollection = ee.ImageCollection.fromImages(
+  years.map(
+    function(y){
+      var w = ls.filter(ee.Filter.calendarRange(y,y,'year'))
+                .filter(ee.Filter.calendarRange(1,365,'day_of_year'))//151,320,
+                .median()
+      
+      var w1 = ls.filter(ee.Filter.calendarRange(y,y,'year')).first()
+      
+      return w.set('year',y)
+              .set('system:time_start',w1.get('system:time_start'))
+    }).flatten()
+);
+
+//print(YearCollection,'yearCollection');
+
+function changeTheName(image){
+  var img_b3 = image.select('red').rename('B3');
+  var img_b5 = image.select('swir1').rename('B5');
+  var img_b7 = image.select('swir2').rename('B7');
+  
+  return image.addBands(img_b3).addBands(img_b5).addBands(img_b7);
+
+}
+
+var yearCol = YearCollection.map(changeTheName).select(['B3','B5','B7']);
+
+// print('yearCol',yearCol);
+
+
+
+
+
+//cal the IFZ index and to collection-----------------------------------
+
+/*
+var b3_mean = ee.Image.constant(380.299);
+var b5_mean = ee.Image.constant(1588.11);
+var b7_mean = ee.Image.constant(607.43);
+var b3_stdDev = ee.Image.constant(59.23);
+var b5_stdDev = ee.Image.constant(171.9);
+var b7_stdDev = ee.Image.constant(7.33);
+*/
+
+
+var b3_mean = ee.Image.constant(380.299)//(414.8993272); 
+var b5_mean = ee.Image.constant(1588.11)//(1342.152677);
+var b7_mean = ee.Image.constant(607.43)//(601.182857);
+var b3_stdDev = ee.Image.constant(73.74893150384746)
+var b5_stdDev = ee.Image.constant(124.1035726)
+var b7_stdDev = ee.Image.constant(82.51996666)
+
+
+
+
+
+function getIFZ(bandImage){
+    var b3 = bandImage.select('B3');
+    var fz_b3 = b3.expression(
+        '(b-b_mean)/b_std',{
+        'b':b3,
+        'b_mean':b3_mean,
+        'b_std':b3_stdDev
+        });
+    
+    var b5 = bandImage.select('B5');
+    var fz_b5 = b5.expression(
+        '(b-b_mean)/b_std',{
+          'b':b5,
+          'b_mean':b5_mean,
+          'b_std':b5_stdDev
+        });
+        
+    var b7 = bandImage.select('B7');
+    var fz_b7 = b7.expression(
+        '(b-b_mean)/b_std',{
+          'b':b7,
+          'b_mean':b7_mean,
+          'b_std':b7_stdDev
+        });
+    
+    var nb = ee.Image.constant(3);
+    var ifz = bandImage.expression(
+      '((fz_b3*fz_b3)+(fz_b5*fz_b5)+(fz_b7*fz_b7))/nb',{
+      'fz_b3':fz_b3,
+      'fz_b5':fz_b5,
+      'fz_b7':fz_b7,
+      'nb':nb
+    });
+        ifz = ifz.rename('ifz').sqrt();
+    return ifz;
+}
+ 
+
+var ifzcol = yearCol.map(function(image){ //THE collection need to change
+    var ifzImg = getIFZ(image)
+        ifzImg = ifzImg.where(ifzImg.gte(18),4.7); //消除云雾的计算错误
+    
+    var year = image.get('system:time_start');//ee.Date(image.get('system:time_start')).get('year');
+    
+    var y = ee.Date(image.get('system:time_start'));
+    
+    ifzImg = ifzImg.set('system:time_start',year)
+           .set('system:index',image.get('system:index'))
+           .set('year',image.get('year'));
+    return ifzImg;  
+    
+})
+ 
+//print('ifzcol',ifzcol);
+
+
+
+//对ifz空值进行填补
+function FillGap (image){
+  var img_Fill = image.focalMean(1,'square','pixels',8)
+                      .copyProperties(image)
+                      .set('system:time_start',image.get('system:time_start'));
+  return img_Fill;
+}
+ 
+var FillIfzCol = ifzcol.map(FillGap);
+print('FillIfzCol',FillIfzCol);
+
+
+
+//test one point ifz value
+var OneValue = FillIfzCol.first().reduceRegion({
+    reducer:ee.Reducer.mean(),
+    geometry:testPoint3,
+    scale:30,
+    maxPixels:1e13
+});
+
+print('fisrtValue',OneValue);
+ 
+
+var chart1= ui.Chart.image.series({
+  imageCollection:FillIfzCol,
+  region:testPoint3,
+  reducer:ee.Reducer.mean(),
+  scale:30,
+}).setOptions({title:'ifzValue'})
+
+print('chart1',chart1);
+
+
+
+
+//times series analysis ----------------------------------------------
+//bestNeighbour
+/**
+ * [getChangeifzCol 获取扰动影像列表]
+ * @param  {[type]} imgCol     [影像集合]
+ * @param  {[type]} windowSize [左右查找影像的范围：目前是2年]
+ * @return {[type]}            [description]
+ */
+var bestNeighbour = function(image,windowSize) {
+  var checkYearNum = ee.Number(windowSize).add(1); //调节时间窗口,需要做检测的年份windowSize is 1
+  var images = ee.List(image.get('neighbour'));
+  var endNum = ee.Number(images.length()).subtract(checkYearNum);
+  var indexList = ee.List.sequence(0,endNum);
+  
+  var imageList = indexList.map(function(index){
+    var startIndex = ee.Number(index);
+    var endIndex = startIndex.add(checkYearNum);
+    
+    var sImages = images.slice(startIndex,endIndex);
+    var collection = ee.ImageCollection.fromImages(sImages);
+        collection = collection.map(function(image){
+          var newImage = ee.Image.constant(0);
+              newImage = newImage.where(image.select('ifz').gte(4.8),1);
+          return newImage;
+    });
+    var sumImage = collection.sum();
+        sumImage = sumImage.where(sumImage.lt(checkYearNum),0); //此处决定连续几年
+    return sumImage;
+  });
+  var collection = ee.ImageCollection.fromImages(imageList);
+  var sumImage = collection.sum();
+      sumImage = sumImage.where(sumImage.gte(checkYearNum),1);
+      image = image.addBands(sumImage.rename('sum'));
+  return image;
+};
+
+
+//-----------------------------------------------------------
+function getChangeIFZimages(imgcol,windowSize){
+  var timeField = 'year';
+  var join = ee.Join.saveAll({
+      matchesKey:'neighbour',
+      ordering: 'system:time_start',
+      ascending: false
+  });
+  
+  var selFilter = ee.Filter.maxDifference({
+    difference:windowSize,
+    leftField:timeField,
+    rightField:timeField
+  });
+  
+  var selNeighbour = join.apply({
+    primary:imgcol,
+    secondary:imgcol,
+    condition:selFilter
+  });
+  
+  var sumCol = ee.ImageCollection(selNeighbour)
+              .map(function(image){
+                var newImage = bestNeighbour(image,windowSize);
+                    newImage = newImage.addBands(image.select('ifz').rename('ifz'));
+                    newImage = newImage.set('index',image.get('index'));
+                    newImage = newImage.set('year',image.get('year'));
+                    newImage = newImage.set('system:time_start',image.get('system:time_start'));
+                return newImage;
+              })
+              .select(['sum','ifz']);
+  return sumCol;
+}
+
+
+
+
+
+//get revovery images 
+function getRecoveryifzImages(imgCol,windowSize){
+  var timeField = 'year';
+  var join = ee.Join.saveAll({
+    matchesKey: 'neighbour'
+  });
+  
+  
+  var selFilter = ee.Filter.maxDifference({
+    difference: windowSize,//2, //2代表的是difference  意思就是左右两个影像如果年份相差不超过2就连接在一起，组成数据集
+    leftField: timeField,
+    rightField: timeField
+  });
+  
+  var selNeighbour = join.apply({
+    primary:imgCol,
+    secondary:imgCol,
+    condition:selFilter
+  })
+  
+  var func1 = function(image){
+    return image.addBands(image.select('sum').rename('type'));
+  };
+  
+  var func2 = function(images){
+    var newImage = ee.Image.constant(0);
+    var curImage = ee.Image(images.get(0));
+    var preImage = ee.Image(images.get(1));
+    var preSum = preImage.select('sum');
+    var curSum = curImage.select('sum');
+        newImage = newImage.where(curSum.eq(1),1);
+        newImage = newImage.where(preSum.eq(1).and(curSum.eq(0)),2);
+        
+    return curImage.addBands(newImage.rename('type'));
+  };
+
+  var sumCol = ee.ImageCollection(selNeighbour)
+                .map(function(image){
+                  var images = ee.List(image.get('neighbour'));
+                  var firImage = ee.Image(images.get(0));
+                  var secImage = ee.Image(images.get(1));
+                  var flag = ee.Number(secImage.get('year'))
+                            .gt(ee.Number(firImage.get('year')));
+                      image = ee.Algorithms.If(flag,func1(image),func2(images));
+                  return image;
+                })
+  return sumCol;
+}
+
+
+var windowSize = 1 
+var getChangeifzCol = getChangeIFZimages(FillIfzCol,windowSize); //1代表的是时间窗口，左右查找1年
+//print('getChangeifzCol',getChangeifzCol);
+
+var recifzCol = getRecoveryifzImages(getChangeifzCol,windowSize);
+//print('RecoveryifzCol',recifzCol);
+
+
+var chart2= ui.Chart.image.series({
+  imageCollection:getChangeifzCol.select('sum'),
+  region:testPoint3,
+  reducer:ee.Reducer.mean(),
+  scale:30,
+}).setOptions({title:'ChangeifzValue'})
+
+print('chart2_change',chart2);
+
+
+
+var chart3= ui.Chart.image.series({
+  imageCollection:recifzCol.select('type'),
+  region:testPoint3,
+  reducer:ee.Reducer.mean(),
+  scale:30,
+}).setOptions({title:'recoveryifzValue'})
+
+print('chart3_recovery',chart3);
+
+
+
+
+
+//---------------------------------------------------------------------------
+// extract the persisting forest by the change and recovery IFZ are 0
+
+//export the forest map of 2020;
+var AssetList=ee.data.listAssets('users/Conala/GLC30_2020').assets;
+var NumOfFile=AssetList.length;
+var imgCol=ee.ImageCollection([]);
+    for(var i=0;i<NumOfFile;i++)
+    {
+      imgCol=imgCol.merge(ee.Image(AssetList[i].name));
+    }
+var GLC_30_China=imgCol.max();
+var lucc = GLC_30_China.clip(roi);
+var Project = lucc.projection()
+print('Lucc',Project)
+
+//GLC_30
+var ImgForest1 = lucc.select('b1').eq(20);
+var ImgForest = ImgForest1.updateMask(ImgForest1)
+
+var NeroImg = ee.Image.constant(0)
+    NeroImg = NeroImg.where(ImgForest.eq(1),1).clip(roi)//it is forest map the value is 1; another value is 0
+
+
+
+//ESA landCover 
+var ESA = ESA10M.mosaic()
+var ImgForest_Esa = ESA.select('Map');
+//var ImgShrub_Esa = ESA.select('Map').eq(20);
+
+
+var NeroImg1 = ee.Image.constant(0)
+    NeroImg1 = NeroImg1.where(ImgForest_Esa.eq(10),1).clip(roi); //only need forest
+
+//print('ImgForest_Esa',NeroImg1)
+
+
+
+//Esri land cover
+function clip(Image){ 
+  return Image.clip(roi)
+}
+var esri_lulc10 = ee.ImageCollection("projects/sat-io/open-datasets/landcover/ESRI_Global-LULC_10m").map(clip)
+ 
+var lulc = esri_lulc10.qualityMosaic('b1').clip(roi)
+
+var NeroImg2 = ee.Image.constant(0)
+    NeroImg2 = NeroImg2.where(lulc.eq(2),1).clip(roi);
+
+//print('ImgForest_Esri',NeroImg2);
+
+
+
+//Forest 2020
+var ThreeImg = ee.ImageCollection.fromImages([NeroImg,NeroImg1,NeroImg2]).sum();
+var NeroImg3 = ee.Image.constant(0)
+    NeroImg3 = NeroImg3.where(ThreeImg.gte(2),1).clip(roi).rename(['Forest']);
+  
+//print('Forest_2020',NeroImg3);
+Map.addLayer(NeroImg3,{},'Forest_2020');
+
+
+
+
+//extract the stable forest
+var OneImage = recifzCol.sum();
+print('OneImage',OneImage);
+
+var newImage = ee.Image.constant(0);
+    newImage = newImage.where(OneImage.select('sum').eq(0).and(OneImage.select('type').eq(0)).and(NeroImg3.eq(1)),1); //1 is stable forest
+
+var stableForest = newImage; //it is stable forest map the value is 1
+//print('stableForest',stableForest);
+    
+  
+
+// var OneSumValue = stableForest.reduceRegion({
+//     reducer:ee.Reducer.mean(),
+//     geometry:testPoint,
+//     scale:30,
+//     maxPixels:1e13
+// });
+
+//print('SumRecValue',OneSumValue);
+
+
+Export.image.toDrive({
+  image:stableForest,
+  description:'stableforest',
+  folder:'VCT',
+  region:roi,
+  scale:30,
+  crs:'EPSG:4326',
+  maxPixels:1e13,
+})
+
+
+
+//extract the year of recovery----------------------------------------------------------
+//sort the imgCollcetion
+var lastSerieImgCol = recifzCol.sort('system:time_start',false);
+//print('lastSerieImgCol',lastSerieImgCol);
+
+
+function TransferToYear(Image){
+  var year  = ee.Number(Image.get('year')).int16();
+
+  var NewImage = ee.Image.constant(0);
+      NewImage = NewImage.where(Image.eq(2),year.subtract(2))
+      NewImage = NewImage.where(Image.neq(2),2022).rename('RecYear');//此处是为了让波段范围一致
+  return Image.addBands(NewImage);
+}
+
+
+
+function AddYear(Image){
+  
+  var NewImage = Image.where(Image.eq(2022),0)//再把2022转换为0,为了让后面提取最大值使用
+      //NewImage = NewImage.where(lastSerieImgCol.select('type').first().neq(0),0)//2022年必须为恢复值 使用neq的时候，必须满足影像有很多值，如果是mask的值，则不能运算,有可能2020年是变化值
+      NewImage = NewImage.where(stableForest.eq(1),0); //如果提取为永久森林，则不参与运算,
+      NewImage = NewImage.where(NeroImg3.eq(0),0); //2020年必须为森林，否则不参与运算
+     
+      
+  return NewImage;
+}
+
+
+
+var RecYear = recifzCol.select('type').map(TransferToYear).select('RecYear').map(AddYear);
+//print('RecYear',RecYear);
+
+
+
+var chart4= ui.Chart.image.series({
+  imageCollection:RecYear,
+  region:testPoint3,
+  reducer:ee.Reducer.mean(),
+  scale:30,
+}).setOptions({title:'recoveryYear'})
+
+print('chart4_recovery',chart4);
+
+
+
+var GrowYear = RecYear.max().clip(roi);//
+
+//Map.addLayer(NeroImg,{},'ImgForest_GLC');
+Map.addLayer(GrowYear,{},'GrowYear',False);
+
+
+
+Export.image.toDrive({
+  image:GrowYear,
+  description:'forestYear',
+  folder:'VCT',
+  fileNamePrefix: 'Forest_Year_VCT', 
+  region:roi,
+  scale:30,
+  crs:'EPSG:4326',
+  maxPixels:1e13,
+})
+
+Export.image.toAsset({
+          image: GrowYear,
+          assetId:'forest_year_vct',
+          description: 'forest_year_vct', 
+          scale: 30, 
+          crs:'EPSG:4326',
+          region: roi,
+          maxPixels:1e13
+});
+
+
+
+Export.image.toDrive({
+  image:NeroImg3,
+  description:'Forest_2020',
+  folder:'VCT',
+  fileNamePrefix: 'Forest_2020', 
+  region:roi,
+  scale:30,
+  crs:'EPSG:4326',
+  maxPixels:1e13,
+})

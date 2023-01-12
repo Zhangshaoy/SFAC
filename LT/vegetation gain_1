@@ -1,0 +1,309 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var table = ee.FeatureCollection("users/zsy11600/Jiangxi/Boundary/JxLine"),
+    stable_image = ee.Image("users/zsy11600/Jiangxi/LT/lt-gee_disturbance_map_stable_forest"),
+    ESA10M = ee.ImageCollection("ESA/WorldCover/v100"),
+    poly1 = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[113.97010150900027, 28.489559847727914],
+          [113.97010150900027, 27.962005415090967],
+          [114.73914447775027, 27.962005415090967],
+          [114.73914447775027, 28.489559847727914]]], null, false),
+    table2 = ee.FeatureCollection("projects/my-image-assets/assets/China/china_provinces_wgs84");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+//######################################################################################################## 
+//#                                                                                                    #\\
+//#                                LANDTRENDR GREATEST GROWTH MAPPING                                  #\\
+//#                                                                                                     #\\
+//########################################################################################################
+
+//the  final code-----------------------------------------------------------------------
+var feature = table2.filterMetadata('provinces','equals','xinjiang').geometry()
+print(feature);
+// define collection parameters
+var startYear = 1985;
+var endYear = 2022;
+var startDay = '06-20';
+var endDay = '09-20';
+var aoi = feature//ee.Geometry.Point(-122.8848, 43.7929);
+var roi = aoi;
+var index = 'NBR';
+var maskThese = ['cloud', 'shadow', 'snow', 'water'];
+
+// define landtrendr parameters
+//recoveryThreshold : A value of 1.0 means the constraint is turned off, while a value of 0.25 would mean that segments that fully recover fast than four years (4 = 1/0.25) are disallowed
+//The smaller the parameter, the more aggressive the constraint 
+
+var runParams = { 
+  maxSegments:            6,
+  spikeThreshold:         0.9,
+  vertexCountOvershoot:   3,
+  preventOneYearRecovery: true,
+  recoveryThreshold:      0.3, //The smaller the parameter, the more aggressive the constraint
+  pvalThreshold:          0.075,
+  bestModelProportion:    0.75,
+  minObservationsNeeded:  6
+};
+
+// define change parameters
+var changeParams = { 
+  delta:  'gain',
+  sort:   'Newest',
+  year:   {checked:true, start:1986, end:2022},
+  mag:    {checked:true,  value:300,  operator:'>'},
+  dur:    {checked:false,  value:3,    operator:'<'},
+  //Setting this parameter reduces false-positives mapped in regions that are already non-vegetated  Index value of vertex at the beginning of the segment
+  preval: {checked:false,  value:300,  operator:'<'},  // it means the index value of start is not over 300, control the position of land use
+  mmu:    {checked:false,  value:11},
+};
+
+//##########################################################################################
+// END INPUTS
+//##########################################################################################
+
+// load the LandTrendr.js module
+var ltgee = require('users/zsy11600/public_repository:LT/Modules/LandTrendr0.1.6.js'); 
+var utils = require('projects/GLANCE:ccdcUtilities/api')
+
+
+
+// add index to changeParams object
+changeParams.index = index;
+
+// run landtrendr
+var lt = ltgee.runLT(startYear, endYear, startDay, endDay, aoi, index, [], runParams, maskThese);
+
+//print('lt',lt);
+// get the change map layers
+var changeImg = ltgee.getChangeMap(lt, changeParams);
+
+//print('ChangeImg',changeImg)
+
+
+// set visualization dictionaries
+var palette = ['#9400D3', '#4B0082', '#0000FF', '#00FF00', '#FFFF00', '#FF7F00', '#FF0000'];
+var yodVizParms = {
+  min: startYear,
+  max: endYear,
+  palette: palette
+}; 
+
+var magVizParms = {
+  min: 200,
+  max: 800,
+  palette: palette
+};
+
+// display the change attribute map - note that there are other layers - print changeImg to console to see all
+//Map.centerObject(aoi, 11);
+// Map.addLayer(changeImg.select(['mag']), magVizParms, 'Magnitude of Change');
+// Map.addLayer(changeImg.select(['yod']), yodVizParms, 'Year of Detection');
+// Map.addLayer(changeImg.select(['dur']),{},'dur of data');
+
+// export change data to google drive
+var region = aoi//.buffer(100000).bounds();
+var exportImg = changeImg.clip(region).unmask(0).short();
+
+var yod = exportImg.select('yod')
+//print('yod',yod);
+//print('vegGain',exportImg)
+
+
+
+//the data exporting is original image of change image
+// get the segment data array
+var segData = ltgee.getSegmentData(lt, index, 'all', true);
+
+// get the segment count
+var segCount = ltgee.getSegmentCount(segData);
+
+//print('segCout',segCount);
+
+//Map.addLayer(segCount, {"min":0, "max":runParams.maxSegments},'segCount');
+
+
+
+//提取最新的森林增加的部分，而且增加的年限和日期相加等于2022
+var AllImage = ee.Image.constant(2022).rename('b2021');
+var CalImage = changeImg.select(['yod','dur']).addBands(AllImage);
+
+///print(CalImage);
+
+var calValue = CalImage.expression(
+    'b2021-(year+dur)',
+  { 
+    'year':CalImage.select(['yod']),
+    'dur':CalImage.select(['dur']),
+    'b2021':CalImage.select(['b2021'])
+  }).rename('result')
+
+var year = changeImg.select(['yod']);
+
+
+var NewImg = ee.Image.constant(0);
+
+var grainImg = year.where(calValue.neq(0),0).round().int16()
+    grainImg = grainImg.updateMask(grainImg.neq(0)); //此处的值就是最近一次的森林开始增加的年份
+
+// Map.addLayer(grainImg,{},'grainImg');
+// Map.addLayer(year,{},'year');
+
+
+//print('grainImg',grainImg);
+
+
+  Export.image.toAsset({
+    image: grainImg,
+    scale: 30,
+    description: 'growth_lt_xinjiang',
+    maxPixels: 1e13,
+    region: aoi,
+    crs:'EPSG:4326',
+    assetId: 'China/'+'LT/'+  'xinjiang',
+  })
+
+// // Make grid and export different tasks for each one. 
+// var studyRegion = aoi;
+// var grid = utils.Inputs.makeAutoGrid(studyRegion.geometry().bounds().buffer(150000), 30)
+//   .filterBounds(studyRegion.geometry())
+//   .toList(100)
+
+
+// grid.size().evaluate(function(s) {
+//   print('# of grids: ', s)
+//   for (var i = 0; i < s; i++) {
+//     var outGeo = ee.Feature(grid.get(i)).geometry()
+//       .intersection(studyRegion.geometry()) // Subset to study region
+//   //Map.addLayer(outGeo, {}, 'Grid ' + i)
+//   // Export.image.toAsset({
+//   //   image: grainImg,
+//   //   scale: 30,
+//   //   description: 'growth_lt_' + i,
+//   //   maxPixels: 1e13,
+//   //   region: outGeo,
+//   //   crs:'EPSG:4326',
+//   //   assetId: 'LT_Gain/' + 'growth_lt_' + i,
+//   // })
+//   }
+// })
+
+
+
+
+
+
+
+
+
+
+
+/*//在LT稳定森林中排除新增加的部分----------------------------------------------------------
+
+其实这里没有太大用，只需要提出变化的森林即可
+
+
+//add 2020 lucc data
+var AssetList=ee.data.listAssets('users/Conala/GLC30_2020').assets;
+var NumOfFile=AssetList.length;
+var imgCol=ee.ImageCollection([]);
+    for(var i=0;i<NumOfFile;i++)
+    {
+      imgCol=imgCol.merge(ee.Image(AssetList[i].name));
+    }
+var GLC_30_China=imgCol.max();
+var lucc = GLC_30_China.clip(roi);
+var Project = lucc.projection()
+print('Lucc',Project)
+
+//GLC_30
+var ImgForest1 = lucc.select('b1').eq(20);
+var ImgForest = ImgForest1.updateMask(ImgForest1)
+
+var NeroImg = ee.Image.constant(0)
+    NeroImg = NeroImg.where(ImgForest.eq(1),1).clip(roi)//it is forest map the value is 1; another value is 0
+
+
+
+//ESA landCover 
+var ESA = ESA10M.mosaic()
+var ImgForest_Esa = ESA.select('Map').eq(10);
+//var ImgShrub_Esa = ESA.select('Map').eq(20);
+
+
+var NeroImg1 = ee.Image.constant(0)
+    NeroImg1 = NeroImg1.where(ImgForest_Esa.eq(10),1).clip(roi); //only need forest
+
+//print('ImgForest_Esa',NeroImg1)
+
+
+
+//Esri land cover
+function clip(Image){ 
+  return Image.clip(roi)
+}
+var esri_lulc10 = ee.ImageCollection("projects/sat-io/open-datasets/landcover/ESRI_Global-LULC_10m").map(clip)
+ 
+var lulc = esri_lulc10.qualityMosaic('b1').clip(roi)
+
+var NeroImg2 = ee.Image.constant(0)
+    NeroImg2 = NeroImg2.where(lulc.eq(2),1).clip(roi);
+
+//print('ImgForest_Esri',NeroImg2);
+
+
+
+//Forest 2020
+var ThreeImg = ee.ImageCollection.fromImages([NeroImg,NeroImg1,NeroImg2]).sum();
+var NeroImg3 = ee.Image.constant(0)
+    NeroImg3 = NeroImg3.where(ThreeImg.gte(2),1).clip(roi).rename(['Forest']);
+  
+//print('Forest_2020',NeroImg3);
+Map.addLayer(NeroImg3,{},'Forest_2020');
+
+
+
+
+
+//在稳定森林中排除新增加的部分
+var DontHaveGrow1 = grainImg.where(stable_image.eq(1),0);//在稳定森林中排除新增加的部分
+var DontHaveGrow = DontHaveGrow1.where(NeroImg3.eq(0),0).clip(region)//排除2020年非森林
+
+
+Map.addLayer(DontHaveGrow,{},'DontHaveGrow');
+
+
+Export.image.toDrive({
+  image: DontHaveGrow, 
+  description: 'lt-gee_growth_map', 
+  folder: 'lt-gee_growth_map', 
+  fileNamePrefix: 'lt-DontHaveGrow-year', 
+  region: region, 
+  scale: 30, 
+  crs: 'EPSG:4326', 
+  maxPixels: 1e13
+});*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

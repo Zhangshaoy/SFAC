@@ -1,0 +1,99 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var CCI_points = ee.FeatureCollection("projects/my-image-assets/assets/China/Cci_points");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+
+/*
+calcalute the ifz threhold in every grid
+
+1.the number of sample point is less 100
+2.the number of sample point is over 100
+3.the number of sample point is 0
+4.the number of sample point is less 100, over 0;
+
+*/
+var GetThreshold = function GetThreshold(ROI,ImageCol){
+var roi = ROI;
+var ls = ImageCol;
+var JxPoints = CCI_points.filterBounds(roi).limit(50);
+
+
+function addPro(fea){
+  var dateYear = ee.Number(fea.get('year'))
+  
+  var startDate = ee.Date.fromYMD(dateYear,1,1);
+  var endDate = ee.Date.fromYMD(dateYear,12,31);
+  
+  var image = ls.select('ifz').filterDate(startDate,endDate).mosaic()
+  var OneValue = image.reduceRegion({
+    reducer:ee.Reducer.mean(),
+    geometry:fea.geometry(), 
+    crs: 'EPSG:4326',
+    scale:30,
+    maxPixels:1e13
+  });
+
+  var PointAddPro = fea.set('value_cal',OneValue.get('ifz'))
+  
+  return PointAddPro;
+}
+
+
+//var PointsAdd = JxPoints.map(addPro);
+//print(PointsAdd)
+
+/*var GetValue = function(feature){
+  var feacol = ee.FeatureCollection(feature);
+  var Fea_num = ee.Number(feacol.size());*/
+var feacol = JxPoints;
+
+//var JxValue = JxPoints.map(GetValue)
+
+//print('JxValue',JxValue);
+  
+
+ 
+
+var GetValue = function(num){
+
+    var Fea_num = num;
+    if (Fea_num >= 100){
+      
+        var Point_AddPro = feacol.limit(50).map(addPro)
+       // var value_histogram = Point_AddPro.aggregate_histogram('value_cal')
+        var value_sort = Point_AddPro.sort('value_cal',false).limit(6)
+        var value_sort_95 = value_sort.toList(6).slice(5,6,1)
+        var value_one = ee.Feature(value_sort_95.get(0)).get('value_cal')
+        var result = ee.Feature(value_one);
+    }
+    else if(0 < Fea_num <100){
+        var Point_AddPro1 = feacol.limit(Fea_num).map(addPro);
+        var value_sort1 = Point_AddPro1.sort('value_cal',false).limit(Fea_num)
+        
+        var Number_start = ee.Number(Fea_num).multiply(ee.Number(0.05)).toInt8().abs()
+        var Number_end = Number_start.add(ee.Number(1)).toInt8().abs();
+
+        var value_sort_951 = value_sort1.toList(Fea_num).slice(Number_start,Number_end,1)
+        var value_one1 = ee.Feature(value_sort_951.get(0)).get('value_cal')
+        
+        result = ee.Feature(value_one1)
+    }
+    else{
+        result = ee.Feature(ee.Number(0));
+    }
+    
+    return result; 
+  }
+
+
+var Size = ee.Number(feacol.size()).toInt8();
+//print('Size',Size)
+
+var Result = GetValue(Size.getInfo())
+
+//print('result',Result)
+
+return Result;
+
+}
+
+exports.GetThreshold = GetThreshold;

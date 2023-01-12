@@ -1,0 +1,74 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var table = ee.FeatureCollection("users/zsy11600/Jiangxi/Boundary/JxLine"),
+    CCI_points = ee.FeatureCollection("projects/my-image-assets/assets/China/Cci_points"),
+    table2 = ee.FeatureCollection("projects/my-image-assets/assets/China/Grids_China");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+
+this version is desined for the grids without secondary forest sample;
+*/
+var jx = table;
+
+var region = table2.filterMetadata('ID','equals',24).first()
+
+var roi  = region.geometry();
+
+var Sample =  require('users/zsy11600/public_repository:China/VCT/Sample_Points_v1');  // the number of points need to change in this code
+var MeanBand = require('users/zsy11600/public_repository:China/VCT/SampleMean_v2');
+var GetIfz = require('users/zsy11600/public_repository:China/VCT/GetIfz')
+var GetThreshold = require('users/zsy11600/public_repository:China/VCT/Points_thre_v1')
+var GetGrowYear = require('users/zsy11600/public_repository:China/VCT/GetGrowYear')
+
+//print(Sample,MeanBand)
+
+var Points = Sample.Sample(roi);
+print(Points.size());
+ 
+var BandMeanList = MeanBand.SampleMean(Points,roi);
+
+
+//print(BandMeanList)
+
+var B3_mean = BandMeanList.get(0);
+var B5_mean = BandMeanList.get(1);
+var B7_mean = BandMeanList.get(2);
+var B3_std = BandMeanList.get(3);
+var B5_std = BandMeanList.get(4);
+var B7_std= BandMeanList.get(5);
+
+var ifzCol = GetIfz.GetIfzCol(roi,B3_mean,B5_mean,B7_mean,B3_std,B5_std,B7_std)
+
+print('ifzCol',ifzCol)
+
+var IfzThreshold = GetThreshold.GetThreshold(roi,ifzCol);
+
+print('ThresholdValue',IfzThreshold);
+
+
+var fea1 = region;
+
+var result_year = GetGrowYear.GetGrowYear(roi,fea1,IfzThreshold,ifzCol);
+
+print('result_year',result_year)
+
+Map.addLayer(roi,{},'roi')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

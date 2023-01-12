@@ -1,0 +1,112 @@
+/*
+get the ifz col 
+*/
+
+var GetIfzCol = function GetIfzCol (ROI,B3_mean,B5_mean,B7_mean,B3_std,B5_std,B7_std){
+//the second way to get the srcol--------------------------------------------
+
+var startYear = 1986;
+var endYear = 2021;
+var startDay = '01-01';
+var endDay = '12-31';
+var index = 'ENC';
+var maskThese = ['cloud', 'shadow', 'snow'];
+var aoi = ROI;
+
+var ltgee = require('users/emaprlab/public:Modules/LandTrendr.js');
+
+var annualSRcollection = ltgee.buildSRcollection(startYear, endYear, startDay, endDay, aoi, maskThese)
+
+var yearCol = annualSRcollection.select(['B3','B5','B7']);
+//print('yearCol',yearCol);
+
+
+/*
+calculate the IFZ index----------------------------------------------------------
+all chart use testPoint3
+*/
+var b3_mean = ee.Image.constant(ee.Number(B3_mean.getInfo()))//(414.8993272); 
+var b5_mean = ee.Image.constant(ee.Number(B5_mean.getInfo()))//(1342.152677);
+var b7_mean = ee.Image.constant(ee.Number(B7_mean.getInfo()))//(601.182857);
+var b3_stdDev = ee.Image.constant(ee.Number(B3_std.getInfo()))
+var b5_stdDev = ee.Image.constant(ee.Number(B5_std.getInfo()))
+var b7_stdDev = ee.Image.constant(ee.Number(B7_std.getInfo()))
+
+
+
+
+function getIFZ(bandImage){
+    var b3 = bandImage.select('B3');
+    var fz_b3 = b3.expression(
+        '(b-b_mean)/b_std',{
+        'b':b3,
+        'b_mean':b3_mean,
+        'b_std':b3_stdDev
+        });
+    
+    var b5 = bandImage.select('B5');
+    var fz_b5 = b5.expression(
+        '(b-b_mean)/b_std',{
+          'b':b5,
+          'b_mean':b5_mean,
+          'b_std':b5_stdDev
+        });
+        
+    var b7 = bandImage.select('B7');
+    var fz_b7 = b7.expression(
+        '(b-b_mean)/b_std',{
+          'b':b7,
+          'b_mean':b7_mean,
+          'b_std':b7_stdDev
+        });
+    
+    var nb = ee.Image.constant(3);
+    var ifz = bandImage.expression(
+      '((fz_b3*fz_b3)+(fz_b5*fz_b5)+(fz_b7*fz_b7))/nb',{
+      'fz_b3':fz_b3,
+      'fz_b5':fz_b5,
+      'fz_b7':fz_b7,
+      'nb':nb
+    });
+        ifz = ifz.rename('ifz').sqrt();
+    return ifz;
+}
+ 
+
+var ifzcol = yearCol.map(function(image){ //THE collection need to change
+    var ifzImg = getIFZ(image)
+        ifzImg = ifzImg.where(ifzImg.gte(18),4.7); //消除云雾的计算错误
+  
+    var readableDate = ee.Date(image.get('system:time_start'));
+    var year = readableDate.format("YYYY");
+    
+    ifzImg = ifzImg.set('system:time_start',image.get("system:time_start"))
+          .set('system:index',image.get('system:index'))
+          .set('year',ee.Number.parse(year));
+    return ifzImg;  
+    
+})
+ 
+//print('ifzcol',ifzcol);
+
+
+
+//对ifz空值进行填补
+function FillGap (image){
+  var img_Fill = image.focalMean(1,'square','pixels',8)
+                      .copyProperties(image)
+                      .set('system:time_start',image.get('system:time_start'));
+  return img_Fill;
+}
+ 
+var FillIfzCol = ifzcol.map(FillGap);
+//print('FillIfzCol',FillIfzCol);
+
+return FillIfzCol
+}
+
+exports.GetIfzCol = GetIfzCol;
+
+
+
+

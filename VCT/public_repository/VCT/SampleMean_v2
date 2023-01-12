@@ -1,0 +1,123 @@
+
+var SampleMean = function SampleMean(Fea,ROI){ 
+
+var Points = Fea;
+
+//print('Point',Points);
+//Map.addLayer(Points,{},'Points');
+
+// define parameters
+var startYear = 1986;
+var endYear = 2021;
+var startDay = '01-01';
+var endDay = '12-31';
+var index = 'ENC';
+var maskThese = ['cloud', 'shadow', 'snow'];
+var aoi = ROI;
+var ltgee = require('users/emaprlab/public:Modules/LandTrendr.js');
+
+var annualSRcollection = ltgee.buildSRcollection(startYear, endYear, startDay, endDay, aoi, maskThese)
+
+var yearCol = annualSRcollection.select(['B3','B5','B7']);
+
+//print('yearCol',yearCol);
+
+
+//cal the mean value of every point on forest sample
+
+//GET THE MEAN value of forest sample---------------------------------------
+var Srcol = yearCol;
+// B3
+var img_mean = Srcol.reduce(ee.Reducer.mean());
+var img_sted = Srcol.reduce(ee.Reducer.stdDev());
+
+
+var SdValue = Points.map(function(point){ //change this 
+      var stats = img_sted.reduceRegion(
+                  {
+                  'reducer':ee.Reducer.sum(),
+                  'geometry':point.geometry(),
+                  'maxPixels':1e13,
+                  'scale':30,
+                  })
+      
+      var b3std = stats.get('B3_stdDev');
+      var b5std = stats.get('B5_stdDev');
+      var b7std = stats.get('B7_stdDev');
+      return ee.Feature(point.geometry(),{'B3_std':b3std,'B5_std':b5std,'B7_std':b7std})
+})
+
+//print('SDvalue',SdValue);
+
+var list = ee.List([]);
+var MeanValue = Points.map(function(point){ //change this 
+      var list = ee.List([]);
+      var stats = img_mean.reduceRegion(
+                  {
+                  'reducer':ee.Reducer.sum(),
+                  'geometry':point.geometry(),
+                  'maxPixels':1e13,
+                  'scale':30,
+                  })
+      
+      var b3mean = stats.get('B3_mean');
+      var b5mean = stats.get('B5_mean');
+      var b7mean = stats.get('B7_mean');
+      return ee.Feature(point.geometry(),{'B3_mean':b3mean,'B5_mean':b5mean,'B7_mean':b7mean})
+})
+//print('Meanvalue',MeanValue);
+
+
+
+
+
+
+//transfer to a list from the featurecollection
+function CalKey (Col,key){
+    function CalList(count){
+      //var KeyName = ee.String(Key);
+      //var count = ee.Number(MeanValue.size());
+      //var key = 'B3_mean';
+      var colList = ee.List(Col.toList(count));
+      var list = ee.List([]);
+      
+      for(var i = 0; i<count; i++){
+        var feature = ee.Feature(colList.get(i))
+        var value = feature.get(key);
+            list = list.add(ee.Number(value)); 
+      }
+      return list;
+    }
+    
+    var count = MeanValue.size();
+    var AllList = CalList(count.getInfo());
+    
+    //calcualte the mean of all points
+    function Calm (N1,N2){
+      return ee.Number(N1).add(N2);
+    }
+    var list_mean = ee.Number(AllList.iterate(Calm,0)).divide(ee.Number(count));
+    //print('list_mean',list_mean);
+    return list_mean;
+}
+
+var B3_mean = CalKey(MeanValue,'B3_mean');
+var B5_mean = CalKey(MeanValue,'B5_mean');
+var B7_mean = CalKey(MeanValue,'B7_mean');
+var B3_std = CalKey(SdValue,'B3_std');
+var B5_std = CalKey(SdValue,'B5_std');
+var B7_std= CalKey(SdValue,'B7_std');
+//print('B3_mean,B5_mean,B7_mean',B3_mean,B5_mean,B7_mean);
+//print('B3_mean,B5_mean,B7_mean',B3_std,B5_std,B7_std);
+
+
+var BandList = ee.List([B3_mean,B5_mean,B7_mean,B3_std,B5_std,B7_std]);
+
+ return BandList;
+}
+exports.SampleMean = SampleMean;
+
+
+
+
+

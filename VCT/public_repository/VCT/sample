@@ -1,0 +1,250 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var table1 = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[111.86208216609846, 27.66500537638079],
+          [111.86208216609846, 24.91729027140785],
+          [115.39967982234846, 24.91729027140785],
+          [115.39967982234846, 27.66500537638079]]], null, false),
+    image2 = ee.Image("projects/my-image-assets/assets/China/Forest_2020_china_v3");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+print('Image_forest',image);
+var roi = table1;
+
+
+
+var Forest = image2.updateMask(image2.eq(1)).clip(roi);
+Map.addLayer(Forest,{palette:'red'},'Forest')
+
+var Points = Forest.stratifiedSample({
+    numPoints:10,
+    classBand:'Forest',
+    region:roi,
+    scale: 30,
+    seed: 123,
+    geometries:true,
+    
+})
+
+print('Point',Points);
+Map.addLayer(Points,{},'Points');
+
+
+
+
+
+/*
+*cal the mean and std value of points in every cell-------------------------------
+*export the forest point mean value and sd 
+*get the imagecollection----------------------------------------------------
+
+*/
+
+//the second way to get the srcol--------------------------------------------
+var startDate = ee.Date.fromYMD(1986,1,1);
+var endDate = ee.Date.fromYMD(2021,12,31);
+var table = roi;
+
+/*
+ function of  get acquiring Landsat SR imageCollection
+*/
+function getImageCollection(studyArea,startDate,endDate){
+
+  var sensorBandDictLandsatSR =ee.Dictionary({
+                        L8 : ee.List([1,2,3,4,5,7,6]),
+                        L7 : ee.List([0,1,2,3,4,5,6]),
+                        L5 : ee.List([0,1,2,3,4,5,6])
+  });
+  var bandNamesLansatSR = ee.List(['blue','green','red','nir','swir1','B10','swir2']);
+  
+  var l5sr = ee.ImageCollection('LANDSAT/LT05/C01/T1_SR')
+              .filterDate(startDate,endDate)
+              .filterBounds(studyArea)
+              .filterMetadata('CLOUD_COVER','less_than',50)
+              .map(cloudMaskL457)
+              .select(sensorBandDictLandsatSR.get('L5'), bandNamesLansatSR);
+  var l7sr = ee.ImageCollection('LANDSAT/LE07/C01/T1_SR')
+              .filterDate(startDate,endDate)
+              .filterDate('2012-01-02','2012-12-30')
+              .filterBounds(studyArea)
+              .filterMetadata('CLOUD_COVER','less_than',50)
+              .map(cloudMaskL457)
+              .select(sensorBandDictLandsatSR.get('L7'), bandNamesLansatSR)
+              .map(function(image){
+                  var filled1a = image.focal_mean(2, 'square', 'pixels', 1)
+                  return filled1a.blend(image)
+                          .set('system:time_start',image.get('system:time_start'));;
+                  });
+  var l8sr = ee.ImageCollection('LANDSAT/LC08/C01/T1_SR')
+              .filterDate(startDate,endDate)
+              .filterBounds(studyArea)
+              .filterMetadata('CLOUD_COVER','less_than',50)
+              .map(maskCloud)
+              .select(sensorBandDictLandsatSR.get('L8'), bandNamesLansatSR);
+  var ls = ee.ImageCollection(l5sr.merge(l7sr).merge(l8sr));
+  return ls;
+}
+
+
+
+
+
+/*
+function of remove cloud
+*/
+var cloudMaskL457 = function(image) {
+  var qa = image.select('pixel_qa');
+  // If the cloud bit (5) is set and the cloud confidence (7) is high
+  // or the cloud shadow bit is set (3), then it's a bad pixel.
+  var cloud = qa.bitwiseAnd(1 << 5)
+                  .and(qa.bitwiseAnd(1 << 7))
+                  .or(qa.bitwiseAnd(1 << 3));
+  // Remove edge pixels that don't occur in all bands
+  var mask2 = image.mask().reduce(ee.Reducer.min());
+  return image.updateMask(cloud.not()).updateMask(mask2);
+};
+
+
+//L8 cloud mask
+  function maskCloud(image) {
+    var cloudBit = 5;
+    var cloudshadowBit = 3;
+    var cloudBitMask = Math.pow(2, cloudBit); // 0x400
+    var cloudshadowBitMask = Math.pow(2, cloudshadowBit); // 0x800
+    function mask_landsat_clouds(image) {
+    var qa = image.select('pixel_qa');
+    var mask = qa.bitwiseAnd(cloudBitMask).eq(0).and( // no clouds
+              qa.bitwiseAnd(cloudshadowBitMask).eq(0)); // no cloudshadow
+    return image.updateMask(mask);
+  }
+    return image;
+  }
+  
+
+var ls = getImageCollection(table,startDate,endDate);
+
+print('LS_ImageCollection',ls);
+
+var years = ee.List.sequence(1986,2021);
+var YearCollection = ee.ImageCollection.fromImages(
+  years.map(
+    function(y){
+      var w = ls.filter(ee.Filter.calendarRange(y,y,'year'))
+                .filter(ee.Filter.calendarRange(1,365,'day_of_year'))
+                .median()
+      return w.set('year',y)
+              .set('system:time_start',y)
+    }).flatten()
+);
+
+print('yearCollection',YearCollection);
+
+function changeTheName(image){
+  var img_b3 = image.select('red').rename('B3');
+  var img_b5 = image.select('swir1').rename('B5');
+  var img_b7 = image.select('swir2').rename('B7');
+  
+  return image.addBands(img_b3).addBands(img_b5).addBands(img_b7);
+
+}
+
+var yearCol = YearCollection.map(changeTheName).select(['B3','B5','B7']);
+print('yearCol',yearCol);
+
+
+//cal the mean value of every point on forest sample
+
+//GET THE MEAN value of forest sample---------------------------------------
+var Srcol = yearCol;
+// B3
+var img_mean = Srcol.reduce(ee.Reducer.mean());
+var img_sted = Srcol.reduce(ee.Reducer.stdDev());
+
+
+var SdValue = Points.map(function(point){ //change this 
+      var stats = img_sted.reduceRegion(
+                  {
+                  'reducer':ee.Reducer.sum(),
+                  'geometry':point.geometry(),
+                  'maxPixels':1e13,
+                  'scale':30,
+                  })
+      
+      var b3std = stats.get('B3_stdDev');
+      var b5std = stats.get('B5_stdDev');
+      var b7std = stats.get('B7_stdDev');
+      return ee.Feature(point.geometry(),{'B3_std':b3std,'B5_std':b5std,'B7_std':b7std})
+})
+
+print('SDvalue',SdValue);
+
+var list = ee.List([]);
+var MeanValue = Points.map(function(point){ //change this 
+      var list = ee.List([]);
+      var stats = img_mean.reduceRegion(
+                  {
+                  'reducer':ee.Reducer.sum(),
+                  'geometry':point.geometry(),
+                  'maxPixels':1e13,
+                  'scale':30,
+                  })
+      
+      var b3mean = stats.get('B3_mean');
+      var b5mean = stats.get('B5_mean');
+      var b7mean = stats.get('B7_mean');
+      return ee.Feature(point.geometry(),{'B3_mean':b3mean,'B5_mean':b5mean,'B7_mean':b7mean})
+})
+print('Meanvalue',MeanValue);
+
+
+
+
+
+
+//transfer to a list from the featurecollection
+function CalKey (key){
+    function CalList(count){
+      //var KeyName = ee.String(Key);
+      //var count = ee.Number(MeanValue.size());
+      //var key = 'B3_mean';
+      var colList = ee.List(MeanValue.toList(count));
+      var list = ee.List([]);
+      
+      for(var i = 0; i<count; i++){
+        var feature = ee.Feature(colList.get(i))
+        var value = feature.get(key);
+            list = list.add(ee.Number(value));
+      }
+      return list;
+    }
+    
+    var count = MeanValue.size();
+    var AllList = CalList(count.getInfo());
+    print('Alllist',AllList);
+    
+    //calcualte the mean of all points
+    function Calm (N1,N2){
+      return ee.Number(N1).add(N2);
+    }
+    var list_mean = ee.Number(AllList.iterate(Calm,0)).divide(ee.Number(count));
+    print('list_mean',list_mean);
+
+}
+
+
+var B3_mean = CalKey('B3_mean');
+var B5_mean = CalKey('B5_mean');
+var B7_mean = CalKey('B7_mean');
+
+print('B3_mean,B5_mean,B7_mean',B3_mean,B5_mean,B7_mean);
+
+
+
+
+

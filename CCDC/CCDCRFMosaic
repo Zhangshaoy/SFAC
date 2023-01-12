@@ -1,0 +1,54 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var CCDCRF3_b2 = ee.ImageCollection("projects/my-image-assets/assets/China/CCDCRF3_b2"),
+    CCDCRF3_b3 = ee.ImageCollection("projects/my-image-assets/assets/China/CCDCRF3_b3"),
+    CCDCRF3_b4 = ee.ImageCollection("projects/my-image-assets/assets/China/CCDCRF3_b4"),
+    CCDCRF3_b5 = ee.ImageCollection("projects/my-image-assets/assets/China/CCDCRF3_b5"),
+    CCDCRF3_b6 = ee.ImageCollection("projects/my-image-assets/assets/China/CCDCRF3_b6"),
+    CCDCRF3_newest = ee.ImageCollection("projects/my-image-assets/assets/China/CCDCRF3"),
+    forest_v2 = ee.Image("projects/my-image-assets/assets/China/Forest_2020_china_v2");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var ccdcrf3_b2 = CCDCRF3_b2.mosaic();
+
+print(ccdcrf3_b2);
+Map.addLayer(ccdcrf3_b2,{},'ccdcrf3_b2');
+
+
+var ccdcrf3_b3 = CCDCRF3_b3.mosaic();
+
+print(ccdcrf3_b3);
+Map.addLayer(ccdcrf3_b3,{},'ccdcrf3_b3');
+
+var ccdcrf3_b4 = CCDCRF3_b4.mosaic();
+
+print(ccdcrf3_b4);
+Map.addLayer(ccdcrf3_b4,{},'ccdcrf3_b4');
+
+
+
+var ccdcrf3_b5 = CCDCRF3_b5.mosaic();
+
+print(ccdcrf3_b5);
+Map.addLayer(ccdcrf3_b5,{},'ccdcrf3_b5');
+
+
+var ccdcrf3_b6 = CCDCRF3_b6.mosaic();
+
+print(ccdcrf3_b6);
+Map.addLayer(ccdcrf3_b6,{},'ccdcrf3_b6');
+
+
+var ccdcrf3_newest = CCDCRF3_newest.mosaic();
+
+var ccdcrf3_mosaic = ee.ImageCollection.fromImages([ccdcrf3_b2,ccdcrf3_b3,ccdcrf3_b4,ccdcrf3_b5,ccdcrf3_b6,ccdcrf3_newest]).mosaic().updateMask(forest_v2.eq(1));
+
+
+print('ccdcrf3_mosaic',ccdcrf3_mosaic);
+
+
+
+
+
+
+
+
+Map.addLayer(ccdcrf3_mosaic,{},'ccdcrf3_mosaic')

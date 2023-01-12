@@ -1,0 +1,180 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var p1 = /* color: #d63000 */ee.Geometry.Point([114.63377977409759, 26.77206016020219]),
+    table = ee.FeatureCollection("projects/my-image-assets/assets/China/china_provinces_wgs84"),
+    poly1 = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[114.45446727751809, 26.880708388619873],
+          [114.45446727751809, 26.43949989838491],
+          [115.13424633025247, 26.43949989838491],
+          [115.13424633025247, 26.880708388619873]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+//######################################################################################################## 
+// this code is desined for tha growth mapping by lt
+/*
+the result is used as the input paramters 
+
+*/
+
+
+//##########################################################################################
+// START INPUTS
+//##########################################################################################
+
+// define collection parameters
+var startYear = 1985;
+var endYear = 2022;
+var startDay = '01-01';
+var endDay = '12-31';
+var aoi = poly1//table      //ee.Geometry.Point(-122.8848, 43.7929);
+var index = 'NBR';
+var maskThese = ['cloud', 'shadow', 'snow', 'water'];
+
+// define landtrendr parameters
+/*
+recoveryThreshold : A value of 1.0 means the constraint is turned off, while a value of 0.25 would mean that segments that fully recover fast than four years (4 = 1/0.25) are disallowed
+                    //The smaller the parameter, the more aggressive the constraint 
+*/
+var runParams = { 
+  maxSegments:            8,
+  spikeThreshold:         0.9,
+  vertexCountOvershoot:   3,
+  preventOneYearRecovery: true,
+  recoveryThreshold:      0.3,   //The smaller the parameter, the more aggressive the constraint
+  pvalThreshold:          0.075,
+  bestModelProportion:    0.75,
+  minObservationsNeeded:  6
+};
+
+// define change parameters
+var changeParams = {
+  delta:  'gain',
+  sort:   'Newest',
+  year:   {checked:true, start:1986, end:2022},
+  mag:    {checked:true,  value:300,  operator:'>'},
+  dur:    {checked:false,  value:3,    operator:'<'},
+  
+  //Setting this parameter reduces false-positives mapped in regions that are already non-vegetated  Index value of vertex at the beginning of the segment
+  preval: {checked:false,  value:300,  operator:'<'},  // it means the index value of start is not over 300, control the position of land use
+  mmu:    {checked:false,  value:11},
+};
+
+//##########################################################################################
+// END INPUTS
+//##########################################################################################
+
+// load the LandTrendr.js module
+var ltgee = require('users/emaprlab/public:Modules/LandTrendr.js'); 
+var utils = require('projects/GLANCE:ccdcUtilities/api')
+
+// add index to changeParams object
+changeParams.index = index;
+
+// run landtrendr
+var lt = ltgee.runLT(startYear, endYear, startDay, endDay, aoi, index, [], runParams, maskThese);
+
+// get the change map layers
+var changeImg = ltgee.getChangeMap(lt, changeParams);
+//print('changeImg',changeImg);
+
+// set visualization dictionaries
+var palette = ['#9400D3', '#4B0082', '#0000FF', '#00FF00', '#FFFF00', '#FF7F00', '#FF0000'];
+var yodVizParms = {
+  min: startYear,
+  max: endYear,
+  palette: palette
+};
+
+var magVizParms = {
+  min: 200,
+  max: 800,
+  palette: palette
+};
+
+// display the change attribute map - note that there are other layers - print changeImg to console to see all
+Map.centerObject(aoi, 7);
+//Map.addLayer(changeImg.select(['mag']), magVizParms, 'Magnitude of Change');
+//Map.addLayer(changeImg.select(['yod']), yodVizParms, 'Year of Detection');
+
+// export change data to google drive
+var region = aoi //.buffer(100000).bounds();
+var exportImg = changeImg.clip(region).unmask(0).short().select(['yod'])//.toArray();
+
+print(exportImg);
+Map.addLayer(exportImg,{},'exportImg')
+
+
+//difine the band we need to classify
+var changeImg_result = changeImg.select(['yod','mag','dur','preval','rate'])
+//print('exportImg',exportImg)
+//print('changeImg_result',changeImg_result);
+
+
+// Export.image.toDrive({
+//   image: exportImg, 
+//   description: 'lt-gee_growth_map', 
+//   folder: 'lt-gee_growth_map', 
+//   fileNamePrefix: 'lt-gee_growth_map', 
+//   region: region, 
+//   scale: 30, 
+//   crs: 'EPSG:4326', 
+//   maxPixels: 1e13
+// });
+
+
+/*Export.image.toAsset({
+		image:exportImg,
+	description:'growth_lt',
+	assetId:'growth_lt',
+//	pyramidingPolicy:,
+//	dimensions:,
+	scale:30,
+	crs: 'EPSG:4326',
+//	crsTransform:,
+	maxPixels: 1e13,
+//	shardSize:,
+})*/
+
+
+
+
+
+
+// // Make grid and export different tasks for each one. 
+// var studyRegion = aoi;
+// var grid = utils.Inputs.makeAutoGrid(studyRegion.geometry().bounds().buffer(150000), 3)
+//   .filterBounds(studyRegion.geometry())
+//   .toList(200)
+
+
+// grid.size().evaluate(function(s) {
+//   print('# of grids: ', s)
+//   for (var i = 0; i < s; i++) {
+//     var outGeo = ee.Feature(grid.get(i)).geometry()
+//       .intersection(studyRegion.geometry()) // Subset to study region
+//   //Map.addLayer(outGeo, {}, 'Grid ' + i)
+//   Export.image.toAsset({
+//     image: exportImg,
+//     scale: 30,
+//     description: 'growth_lt' + i,
+//     maxPixels: 1e13,
+//     region: outGeo,
+//     crs:'EPSG:4326',
+//     assetId: 'growth_lt' + i,
+//   })
+//   }
+// })
+
+
+
+
+
+
+
+

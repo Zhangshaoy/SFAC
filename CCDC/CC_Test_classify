@@ -1,0 +1,492 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var table = ee.FeatureCollection("users/zsy11600/Jiangxi/Boundary/JxLine"),
+    testPoly = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[114.3026656193777, 27.81549806968057],
+          [114.3026656193777, 26.397510971666392],
+          [115.9231490178152, 26.397510971666392],
+          [115.9231490178152, 27.81549806968057]]], null, false),
+    Forest_v2 = ee.Image("projects/my-image-assets/assets/China/Forest_2020_china_v2"),
+    imageVisParam = {"opacity":1,"bands":["tStart"],"palette":["97e7ff"]},
+    table2 = ee.FeatureCollection("projects/my-image-assets/assets/China/china_provinces_wgs84"),
+    SRTM = ee.Image("USGS/SRTMGL1_003"),
+    TrainingData = ee.FeatureCollection("projects/my-image-assets/assets/China/trainingDataPoints_Merge"),
+    TrainingData_s2 = ee.FeatureCollection("projects/my-image-assets/assets/China/trainingData_s2"),
+    TrainingData_t3 = ee.FeatureCollection("projects/my-image-assets/assets/China/CCDC/ccdc_use_training_data_third");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+
+/*
+
+1.extract the magnitude, RMSE, Prob, tStart of change and the time in ccdc
+2.RF classify in the mosaic result
+
+2022-10-05 demo: 
+
+
+*/
+var forest_2020 = Forest_v2;
+
+
+
+var studyRegion = table2;
+var roi = studyRegion;
+Map.addLayer(studyRegion,{},'Roi')
+Map.centerObject(studyRegion)
+
+
+var globalResults = ee.ImageCollection('projects/CCDC/v3').mosaic() 
+var changeResults = globalResults.clip(studyRegion) 
+
+print('result',changeResults);
+
+//get the change 
+var utils = require('projects/GLANCE:ccdcUtilities/api')
+var segs = ['S1','S2','S3','S4','S5','S6']
+var bands = ['GREEN']
+var ccdImage = utils.CCDC.buildCcdImage(changeResults, segs.length, bands)
+
+print('ccdImage',ccdImage)
+
+
+//提取最后一次开始变化的年份
+var tStart1 = ccdImage.select(['S1_tStart']).rename('tStart');
+var tStart2 = ccdImage.select(['S2_tStart']).rename('tStart');
+var tStart3 = ccdImage.select(['S3_tStart']).rename('tStart');
+var tStart4 = ccdImage.select(['S4_tStart']).rename('tStart');
+var tStart5 = ccdImage.select(['S5_tStart']).rename('tStart');
+var tStart6 = ccdImage.select(['S6_tStart']).rename('tStart');
+
+var tStart = ee.ImageCollection([tStart1,tStart2,tStart3,tStart4,tStart5,tStart6]).max().round().int16()
+    tStart = tStart.where(forest_2020.eq(0),0); //the value is 0, 1986---, masked
+
+//print('tStart',tStart);
+
+
+//process the every start time information of every time.
+var tStart_b2 = tStart2.round().int16().updateMask(forest_2020.eq(1))
+    tStart_b2 = tStart_b2.updateMask(tStart_b2.gt(0)); //only need the year number
+    
+var tStart_b3 = tStart3.round().int16().updateMask(forest_2020.eq(1))
+    tStart_b3 = tStart_b3.updateMask(tStart_b3.gt(0)); //only need the year number    
+    
+var tStart_b4 = tStart4.round().int16().updateMask(forest_2020.eq(1))
+    tStart_b4 = tStart_b4.updateMask(tStart_b4.gt(0)); //only need the year number 
+
+var tStart_b5 = tStart5.round().int16().updateMask(forest_2020.eq(1))
+    tStart_b5 = tStart_b5.updateMask(tStart_b5.gt(0)); //only need the year number 
+    
+var tStart_b6 = tStart6.round().int16().updateMask(forest_2020.eq(1))
+    tStart_b6 = tStart_b6.updateMask(tStart_b6.gt(0)); //only need the year number     
+    
+
+//print('tStart_b2',tStart_b2);
+//Map.addLayer(tStart_b2,{min:1986, max:2020, palette:['white', 'blue']},'tStart2');
+
+
+
+
+
+//提取最后一次开始变化的等级magnitude 
+var MAG1 = ccdImage.select(['S1_GREEN_MAG']).rename('MAG').multiply(ee.Image.constant(1000)).selfMask();
+var MAG2 = ccdImage.select(['S2_GREEN_MAG']).rename('MAG').multiply(ee.Image.constant(1000)).selfMask();
+var MAG3 = ccdImage.select(['S3_GREEN_MAG']).rename('MAG').multiply(ee.Image.constant(1000)).selfMask();
+var MAG4 = ccdImage.select(['S4_GREEN_MAG']).rename('MAG').multiply(ee.Image.constant(1000)).selfMask();
+var MAG5 = ccdImage.select(['S5_GREEN_MAG']).rename('MAG').multiply(ee.Image.constant(1000)).selfMask();
+var MAG6 = ccdImage.select(['S6_GREEN_MAG']).rename('MAG').multiply(ee.Image.constant(1000)).selfMask();
+
+var Mag = ee.ImageCollection([MAG1,MAG2,MAG3,MAG4,MAG5,MAG6]).mosaic();//.max().round().int16()
+    Mag = Mag.where(forest_2020.eq(0),0).selfMask();
+    
+
+//print('Mag',Mag);
+
+//Map.addLayer(Mag,{},'Mag');
+
+
+
+//提取最后一次开始变化的等级prob
+var Prob1 = ccdImage.select(['S1_changeProb']).rename('Prob').multiply(ee.Image.constant(1000)).selfMask();
+var Prob2 = ccdImage.select(['S2_changeProb']).rename('Prob').multiply(ee.Image.constant(1000)).selfMask();
+var Prob3 = ccdImage.select(['S3_changeProb']).rename('Prob').multiply(ee.Image.constant(1000)).selfMask();
+var Prob4 = ccdImage.select(['S4_changeProb']).rename('Prob').multiply(ee.Image.constant(1000)).selfMask();
+var Prob5 = ccdImage.select(['S5_changeProb']).rename('Prob').multiply(ee.Image.constant(1000)).selfMask();
+var Prob6 = ccdImage.select(['S6_changeProb']).rename('Prob').multiply(ee.Image.constant(1000)).selfMask();
+
+var Prob = ee.ImageCollection([Prob1,Prob2,Prob3,Prob4,Prob5,Prob6]).mosaic();//.max().round().int16()
+    Prob = Prob.where(forest_2020.eq(0),0).selfMask();
+
+//Map.addLayer(Prob,{},'prob');
+
+//提取最后一次开始变化的等级RMSE
+var RMSE1 = ccdImage.select(['S1_GREEN_RMSE']).rename('RMSE').multiply(ee.Image.constant(1000)).selfMask();
+var RMSE2 = ccdImage.select(['S2_GREEN_RMSE']).rename('RMSE').multiply(ee.Image.constant(1000)).selfMask();
+var RMSE3 = ccdImage.select(['S3_GREEN_RMSE']).rename('RMSE').multiply(ee.Image.constant(1000)).selfMask();
+var RMSE4 = ccdImage.select(['S4_GREEN_RMSE']).rename('RMSE').multiply(ee.Image.constant(1000)).selfMask();
+var RMSE5 = ccdImage.select(['S5_GREEN_RMSE']).rename('RMSE').multiply(ee.Image.constant(1000)).selfMask();
+var RMSE6 = ccdImage.select(['S6_GREEN_RMSE']).rename('RMSE').multiply(ee.Image.constant(1000)).selfMask();
+
+
+var Rmse = ee.ImageCollection([RMSE1,RMSE2,RMSE3,RMSE4,RMSE5,RMSE6]).mosaic();//.max().round().int16()
+    Rmse = Rmse.where(forest_2020.eq(0),0).selfMask();
+
+//Map.addLayer(Rmse,{},'Rmse');
+
+//提取最后一次开始变化的等级GREEN_coef_INTP
+var GREEN_coef_INTP1 = ccdImage.select(['S1_GREEN_coef_INTP']).rename('coef_INTP').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_INTP2 = ccdImage.select(['S2_GREEN_coef_INTP']).rename('coef_INTP').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_INTP3 = ccdImage.select(['S3_GREEN_coef_INTP']).rename('coef_INTP').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_INTP4 = ccdImage.select(['S4_GREEN_coef_INTP']).rename('coef_INTP').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_INTP5 = ccdImage.select(['S5_GREEN_coef_INTP']).rename('coef_INTP').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_INTP6 = ccdImage.select(['S6_GREEN_coef_INTP']).rename('coef_INTP').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_INTP = ee.ImageCollection([GREEN_coef_INTP1,GREEN_coef_INTP2,GREEN_coef_INTP3,GREEN_coef_INTP4,GREEN_coef_INTP5,GREEN_coef_INTP6]).mosaic();
+    GREEN_coef_INTP = GREEN_coef_INTP.where(forest_2020.eq(0),0).selfMask();
+
+//print('GREEN_coef_INTP',GREEN_coef_INTP);
+
+//提取最后一次开始变化的等级GREEN_coef_INTP
+var GREEN_coef_SLP1 = ccdImage.select(['S1_GREEN_coef_SLP']).rename('coef_SLP').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SLP2 = ccdImage.select(['S2_GREEN_coef_SLP']).rename('coef_SLP').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SLP3 = ccdImage.select(['S3_GREEN_coef_SLP']).rename('coef_SLP').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SLP4 = ccdImage.select(['S4_GREEN_coef_SLP']).rename('coef_SLP').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SLP5 = ccdImage.select(['S5_GREEN_coef_SLP']).rename('coef_SLP').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SLP6 = ccdImage.select(['S6_GREEN_coef_SLP']).rename('coef_SLP').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SLP = ee.ImageCollection([GREEN_coef_SLP1,GREEN_coef_SLP2,GREEN_coef_SLP3,GREEN_coef_SLP4,GREEN_coef_SLP5,GREEN_coef_SLP6]).mosaic();
+    GREEN_coef_SLP = GREEN_coef_SLP.where(forest_2020.eq(0),0).selfMask();
+
+//print('GREEN_coef_SLP',GREEN_coef_SLP);
+
+//提取最后一次开始变化的等级GREEN_coef_COS
+var GREEN_coef_COS1 = ccdImage.select(['S1_GREEN_coef_COS']).rename('coef_COS').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_COS2 = ccdImage.select(['S2_GREEN_coef_COS']).rename('coef_COS').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_COS3 = ccdImage.select(['S3_GREEN_coef_COS']).rename('coef_COS').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_COS4 = ccdImage.select(['S4_GREEN_coef_COS']).rename('coef_COS').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_COS5 = ccdImage.select(['S5_GREEN_coef_COS']).rename('coef_COS').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_COS6 = ccdImage.select(['S6_GREEN_coef_COS']).rename('coef_COS').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_COS = ee.ImageCollection([GREEN_coef_COS1,GREEN_coef_COS2,GREEN_coef_COS3,GREEN_coef_COS4,GREEN_coef_COS5,GREEN_coef_COS6]).mosaic();
+    GREEN_coef_COS = GREEN_coef_COS.where(forest_2020.eq(0),0).selfMask();
+
+print('GREEN_coef_COS',GREEN_coef_COS2);
+
+
+//提取最后一次开始变化的等级GREEN_coef_SIN
+var GREEN_coef_SIN1 = ccdImage.select(['S1_GREEN_coef_SIN']).rename('coef_SIN').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SIN2 = ccdImage.select(['S2_GREEN_coef_SIN']).rename('coef_SIN').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SIN3 = ccdImage.select(['S3_GREEN_coef_SIN']).rename('coef_SIN').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SIN4 = ccdImage.select(['S4_GREEN_coef_SIN']).rename('coef_SIN').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SIN5 = ccdImage.select(['S5_GREEN_coef_SIN']).rename('coef_SIN').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SIN6 = ccdImage.select(['S6_GREEN_coef_SIN']).rename('coef_SIN').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SIN = ee.ImageCollection([GREEN_coef_SIN1,GREEN_coef_SIN2,GREEN_coef_SIN3,GREEN_coef_SIN4,GREEN_coef_SIN5,GREEN_coef_SIN6]).mosaic();
+    GREEN_coef_SIN = GREEN_coef_SIN.where(forest_2020.eq(0),0).selfMask();
+
+//print('GREEN_coef_SIN',GREEN_coef_SIN);
+
+//提取最后一次开始变化的等级GREEN_coef_COS2
+var GREEN_coef_COS21 = ccdImage.select(['S1_GREEN_coef_COS2']).rename('coef_COS2').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_COS22 = ccdImage.select(['S2_GREEN_coef_COS2']).rename('coef_COS2').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_COS23 = ccdImage.select(['S3_GREEN_coef_COS2']).rename('coef_COS2').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_COS24 = ccdImage.select(['S4_GREEN_coef_COS2']).rename('coef_COS2').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_COS25 = ccdImage.select(['S5_GREEN_coef_COS2']).rename('coef_COS2').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_COS26 = ccdImage.select(['S6_GREEN_coef_COS2']).rename('coef_COS2').multiply(ee.Image.constant(1000)).selfMask();
+//var GREEN_coef_COS2 = ee.ImageCollection([GREEN_coef_COS21,GREEN_coef_COS22,GREEN_coef_COS23,GREEN_coef_COS24,GREEN_coef_COS25,GREEN_coef_COS26]).mosaic();
+//    GREEN_coef_COS2 = GREEN_coef_COS2.where(forest_2020.eq(0),0).selfMask();
+
+//print('GREEN_coef_COS2',GREEN_coef_COS2);
+
+//提取最后一次开始变化的等级GREEN_coef_SIN2
+var GREEN_coef_SIN21 = ccdImage.select(['S1_GREEN_coef_SIN2']).rename('coef_SIN2').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SIN22 = ccdImage.select(['S2_GREEN_coef_SIN2']).rename('coef_SIN2').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SIN23 = ccdImage.select(['S3_GREEN_coef_SIN2']).rename('coef_SIN2').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SIN24 = ccdImage.select(['S4_GREEN_coef_SIN2']).rename('coef_SIN2').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SIN25 = ccdImage.select(['S5_GREEN_coef_SIN2']).rename('coef_SIN2').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SIN26 = ccdImage.select(['S6_GREEN_coef_SIN2']).rename('coef_SIN2').multiply(ee.Image.constant(1000)).selfMask();
+//var GREEN_coef_SIN2 = ee.ImageCollection([GREEN_coef_SIN21,GREEN_coef_SIN22,GREEN_coef_SIN23,GREEN_coef_SIN24,GREEN_coef_SIN25,GREEN_coef_SIN26]).mosaic();
+//    GREEN_coef_SIN2 = GREEN_coef_SIN2.where(forest_2020.eq(0),0).selfMask();
+
+//print('GREEN_coef_SIN2',GREEN_coef_SIN2);
+
+
+//提取最后一次开始变化的等级GREEN_coef_COS3
+var GREEN_coef_COS31 = ccdImage.select(['S1_GREEN_coef_COS3']).rename('coef_COS3').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_COS32 = ccdImage.select(['S2_GREEN_coef_COS3']).rename('coef_COS3').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_COS33 = ccdImage.select(['S3_GREEN_coef_COS3']).rename('coef_COS3').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_COS34 = ccdImage.select(['S4_GREEN_coef_COS3']).rename('coef_COS3').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_COS35 = ccdImage.select(['S5_GREEN_coef_COS3']).rename('coef_COS3').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_COS36 = ccdImage.select(['S6_GREEN_coef_COS3']).rename('coef_COS3').multiply(ee.Image.constant(1000)).selfMask();
+//var GREEN_coef_COS3 = ee.ImageCollection([GREEN_coef_COS31,GREEN_coef_COS32,GREEN_coef_COS33,GREEN_coef_COS34,GREEN_coef_COS35,GREEN_coef_COS36]).mosaic();
+//    GREEN_coef_COS3 = GREEN_coef_COS3.where(forest_2020.eq(0),0).selfMask();
+
+//print('GREEN_coef_COS3',GREEN_coef_COS3);
+
+//提取最后一次开始变化的等级GREEN_coef_SIN3
+var GREEN_coef_SIN31 = ccdImage.select(['S1_GREEN_coef_SIN3']).rename('coef_SIN3').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SIN32 = ccdImage.select(['S2_GREEN_coef_SIN3']).rename('coef_SIN3').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SIN33 = ccdImage.select(['S3_GREEN_coef_SIN3']).rename('coef_SIN3').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SIN34 = ccdImage.select(['S4_GREEN_coef_SIN3']).rename('coef_SIN3').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SIN35 = ccdImage.select(['S5_GREEN_coef_SIN3']).rename('coef_SIN3').multiply(ee.Image.constant(1000)).selfMask();
+var GREEN_coef_SIN36 = ccdImage.select(['S6_GREEN_coef_SIN3']).rename('coef_SIN3').multiply(ee.Image.constant(1000)).selfMask();
+//var GREEN_coef_SIN3 = ee.ImageCollection([GREEN_coef_SIN31,GREEN_coef_SIN32,GREEN_coef_SIN33,GREEN_coef_SIN34,GREEN_coef_SIN35,GREEN_coef_SIN36]).mosaic();
+//   GREEN_coef_SIN3 = GREEN_coef_SIN3.where(forest_2020.eq(0),0).selfMask();
+
+//print('GREEN_coef_SIN3',GREEN_coef_SIN3);
+
+
+var elevation = SRTM.clip(roi);
+var aspect = ee.Terrain.aspect(elevation);
+var slope = ee.Terrain.slope(elevation);
+
+// print('elevation',elevation);
+// print('slope',slope);
+
+//build the image for random forest ----------------------------------
+var result_out = ee.Image.cat(Mag,Prob,Rmse,GREEN_coef_INTP,GREEN_coef_SLP,GREEN_coef_SIN,GREEN_coef_COS2,GREEN_coef_SIN2,GREEN_coef_COS3,
+                              GREEN_coef_SIN3,elevation,aspect,slope);
+
+print('result_out',result_out);
+
+//Map.addLayer(result_out,{},'result_out');
+
+
+//the result of break5
+
+var result_out_break1 = ee.Image.cat(MAG1,Prob1,RMSE1,GREEN_coef_INTP1,GREEN_coef_SLP1,GREEN_coef_COS1,GREEN_coef_SIN1,GREEN_coef_COS21,GREEN_coef_SIN21,GREEN_coef_COS31,
+                              GREEN_coef_SIN31,elevation,aspect,slope)
+var result_out_break2 = ee.Image.cat(MAG2,Prob2,RMSE2,GREEN_coef_INTP2,GREEN_coef_SLP2,GREEN_coef_COS2,GREEN_coef_SIN2,GREEN_coef_COS22,GREEN_coef_SIN22,GREEN_coef_COS32,
+                              GREEN_coef_SIN32,elevation,aspect,slope)
+var result_out_break3 = ee.Image.cat(MAG3,Prob3,RMSE3,GREEN_coef_INTP3,GREEN_coef_SLP3,GREEN_coef_COS3,GREEN_coef_SIN3,GREEN_coef_COS23,GREEN_coef_SIN23,GREEN_coef_COS33,
+                              GREEN_coef_SIN33,elevation,aspect,slope)
+var result_out_break4 = ee.Image.cat(MAG4,Prob4,RMSE4,GREEN_coef_INTP4,GREEN_coef_SLP4,GREEN_coef_COS4,GREEN_coef_SIN4,GREEN_coef_COS24,GREEN_coef_SIN24,GREEN_coef_COS34,
+                              GREEN_coef_SIN34,elevation,aspect,slope)                         
+var result_out_break5 = ee.Image.cat(MAG5,Prob5,RMSE5,GREEN_coef_INTP5,GREEN_coef_SLP5,GREEN_coef_COS5,GREEN_coef_SIN5,GREEN_coef_COS25,GREEN_coef_SIN25,GREEN_coef_COS35,
+                              GREEN_coef_SIN35,elevation,aspect,slope) 
+var result_out_break6 = ee.Image.cat(MAG6,Prob6,RMSE6,GREEN_coef_INTP6,GREEN_coef_SLP6,GREEN_coef_COS6,GREEN_coef_SIN6,GREEN_coef_COS26,GREEN_coef_SIN26,GREEN_coef_COS36,
+                              GREEN_coef_SIN36,elevation,aspect,slope) 
+
+
+//Map.addLayer(result_out_break2.select(1),{},'result_out_break5');
+
+
+
+
+
+//export the result of newest break of ccdc
+
+// Export.image.toAsset({
+// 		image:tStart,
+// 	description:'tStart_ccdc',
+// 	assetId:'CCDC_tStart_year',
+// //	pyramidingPolicy:,
+// //	dimensions:,
+// 	scale:30,
+// 	crs: 'EPSG:4326',
+// //	crsTransform:,
+// 	maxPixels: 1e13,
+// //	shardSize:,
+// })
+
+
+
+
+//Start run random forest-------------------------------------------------------------------------------
+
+//load the training data
+var result_out_break0_classify = result_out_break1.unmask(0).updateMask(tStart.gte(1986));  //newest the result of ccdc of break information
+
+var result_out_break2_classify = result_out_break2.unmask(0).updateMask(tStart_b2.gte(1986));
+
+var result_out_break3_classify = result_out_break3.unmask(0).updateMask(tStart_b3.gte(1986));
+
+var result_out_break4_classify = result_out_break4.unmask(0).updateMask(tStart_b4.gte(1986));
+
+var result_out_break5_classify = result_out_break5.unmask(0).updateMask(tStart_b5.gte(1986));
+
+var result_out_break6_classify = result_out_break6.unmask(0).updateMask(tStart_b6.gte(1986));
+
+
+//Map.addLayer(result_out_break2_classify,{},'result_out_break2');
+Map.addLayer(result_out_break6_classify,{},'result_out_break6');
+
+//print('00',result_out_break0_classify);
+//print('22',result_out_break5_classify);
+
+
+var predictors = result_out_break0_classify.unmask(0).updateMask(tStart.gte(1986));
+
+var predictors_pre = result_out_break0_classify.unmask(0).updateMask(tStart_b6.gte(1986));  //need to changed for every calssification^^^^^^^^^^^^_________^^^^^^^^^^^^
+
+var PA = TrainingData_t3.filterBounds(roi);
+var sampleData = PA.randomColumn('random')
+
+//Map.addLayer(predictors,{},'predictors');
+//Map.addLayer(predictors_pre,{},'predictors_pre');
+
+
+
+//print(sampleData);
+var sample_training = sampleData.filter(ee.Filter.lt('random', 0.7))
+var sample_validate = sampleData.filter(ee.Filter.gte('random', 0.7));
+//print('sample_validate',sample_validate);
+//print('sample_training',sample_training);
+
+//Map.addLayer(PA.style({color: 'red', pointSize: 3, width: 1, fillColor: 'white'}),{}, 'Merged_Presence_Absence');
+
+
+var samples_train = predictors.sampleRegions({
+  collection: sample_training,
+  properties: ['prensence'],  //notice the big  and small code of  presence
+  scale: 30 });
+
+
+
+var samples_vali = predictors.sampleRegions({
+  collection: sample_validate,
+  properties: ['prensence'],
+  scale: 30 });
+
+
+
+//build the model
+// Using the sampled data, build a randomForest model.
+// Using a specific seed (random number) exactly replicates your model each time you run it.
+var trainingclassifier = ee.Classifier.smileRandomForest({
+                  numberOfTrees: 10,
+                  seed: 7})
+                  .train({
+                        features: samples_train,
+                        classProperty: 'prensence'});
+//print(trainingclassifier);
+
+
+var validateclassifier = ee.Classifier.smileRandomForest({
+                  numberOfTrees: 10,
+                  seed: 7})
+                  .train({
+                        features: samples_vali,
+                        classProperty: 'prensence'});
+
+
+// Print Confusion Matrix and Overall Accuracy.
+var confusionMatrix_train = trainingclassifier.confusionMatrix();
+//print('Error matrix_train: ', confusionMatrix_train);
+//print('Training overall accuracy: ', confusionMatrix_train.accuracy());
+
+var confusionMatrix_validate = validateclassifier.confusionMatrix();
+//print('Error matrix_validate: ', confusionMatrix_validate);
+//print('validate overall accuracy: ', confusionMatrix_validate.accuracy());
+
+
+// Apply the model to the extent of the loaded predictor image.
+//var classified = predictors_pre.classify(trainingclassifier).clip(roi); // the result map of classify
+
+
+// importance of indicator
+
+//print('importance of indicator',trainingclassifier.explain());
+var dict = trainingclassifier.explain();
+var variable_importance = ee.Feature(null, ee.Dictionary(dict).get('importance'));
+
+Export.table.toDrive({
+	collection:ee.FeatureCollection(variable_importance),
+	description:'variable_importance',
+	folder:'Validate_CCDC',
+	fileNamePrefix:'variable_importance',
+	fileFormat:'CSV',
+});
+
+
+//Map.addLayer(classified.clip(testPoly), {min:0, max:1, palette:['white', 'blue']}, 'classified')
+
+
+
+// //export the metrix of accuracy 
+// Export.table.toDrive({
+// 		collection:ee.FeatureCollection([ee.Feature(null,{
+//         matrix:confusionMatrix_validate.array(),
+//         kappa:confusionMatrix_validate.kappa(),
+//         accuracy:confusionMatrix_validate.accuracy()
+//         })
+// ])
+// 	description:'confusionMatrix_validate',
+// 	folder:'Validate_CCDC',
+// 	fileNamePrefix:'matrix_validate_t3',
+// 	fileFormat:'CSV',
+// })
+
+
+
+/*
+
+var tStart_masked = tStart_b6.updateMask(classified.eq(1).and(Forest_v2.eq(1)))  // the image need to changed for every calssification^^^^^^^^^^^^_________^^^^^^^^^^^^
+
+//Map.addLayer(tStart_masked,{},'tStart_masked_f');
+ 
+//export the result of random forest-----------------------------------------------
+var utils = require('projects/GLANCE:ccdcUtilities/api')
+
+// Make grid and export different tasks for each one. 
+var studyRegion = roi;
+var grid = utils.Inputs.makeAutoGrid(studyRegion.geometry().bounds().buffer(1000000), 20)
+  .filterBounds(studyRegion.geometry())
+  .toList(100)
+
+Map.addLayer(studyRegion, {}, 'studyRegion')
+
+grid.size().evaluate(function(s) {
+  print('# of grids: ', s)
+  
+  for (var i = 0; i < s; i++) {
+    var outGeo = ee.Feature(grid.get(i)).geometry()
+      .intersection(studyRegion.geometry()) // Subset to study region
+  Map.addLayer(outGeo, {}, 'Grid ' + i)
+//   Export.image.toDrive({
+// 		image:forest_mask,
+// 	description:'BSI_Yearly_china'+i,
+// 	folder:'BSI_China',
+// 	fileNamePrefix:'BSI_Yearly_china_'+i,
+// //	dimensions:,
+// 	region:outGeo,
+// 	scale:30,
+// 	crs:'EPSG:4326',
+// //	crsTransform:,
+// 	maxPixels:1e13,
+// //	shardSize:,
+// //	fileDimensions:,
+
+
+
+// //	skipEmptyTiles:,
+// //	fileFormat:,
+// //	formatOptions:,
+// })
+  
+  Export.image.toAsset({
+    image: tStart_masked,
+    scale: 30,
+    description: 'tStart_masked_random_f_' + i,
+    maxPixels: 1e13,
+    region: outGeo,
+    crs:'EPSG:4326',
+    assetId: 'China/CCDCRF3_b6/' + 'tStart_RF_' + i,
+  });
+  }
+})
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,60 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var table = ee.FeatureCollection("projects/my-image-assets/assets/China/China_line"),
+    table2 = ee.FeatureCollection("projects/my-image-assets/assets/China/china_provinces_wgs84"),
+    table3 = ee.FeatureCollection("projects/my-image-assets/assets/World");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+
+var roi = table3;
+
+var generateGrid = function(xmin, ymin, xmax, ymax, dx, dy) {
+  var xx = ee.List.sequence(xmin, ee.Number(xmax).subtract(0.0001), dx);
+  var yy = ee.List.sequence(ymin, ee.Number(ymax).subtract(0.0001), dy);
+  var cells = xx.map(function(x) {
+    return yy.map(function(y) {
+      var x1 = ee.Number(x);
+      var x2 = ee.Number(x).add(ee.Number(dx));
+      var y1 = ee.Number(y);
+      var y2 = ee.Number(y).add(ee.Number(dy));
+      var coords = ee.List([x1, y1, x2, y2]);
+      var rect = ee.Algorithms.GeometryConstructors.Rectangle(coords);   //生成矩形
+      return ee.Feature(rect);
+    });
+  }).flatten();  
+  return ee.FeatureCollection(cells);
+};
+var bounds = roi.geometry().bounds();
+var coords = ee.List(bounds.coordinates().get(0));
+var xmin = ee.List(coords.get(0)).get(0);
+var ymin = ee.List(coords.get(0)).get(1);
+var xmax = ee.List(coords.get(2)).get(0);
+var ymax = ee.List(coords.get(2)).get(1);
+var dx = ee.Number(0.3)//(ee.Number(xmax).subtract(xmin)).divide(4);
+var dy = ee.Number(0.3)//(ee.Number(ymax).subtract(ymin)).divide(4);  //the 3 present the 300km of grids
+var grid = generateGrid(xmin, ymin, xmax, ymax, dx, dy);
+var grid = grid.filterBounds(table3); // filter out out-of-boundary tiles
+print(grid.size()); //查看生成所有格网数量
+
+
+Map.addLayer(grid, {color:'red'}, 'grid');
+
+
+Export.table.toAsset({
+  collection:grid,
+  description:'grid_world',
+  assetId:'Grids_China',
+  //folder:'Word',
+  //fileNamePrefix: 'Grid_world', 
+  //fileFormat:"SHP",
+})
+
+
+
+
+
+
+
+
+
+
+
+

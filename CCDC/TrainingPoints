@@ -1,0 +1,292 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var LT_1 = ee.ImageCollection("users/thea321cxy/LT"),
+    LT_2 = ee.ImageCollection("projects/my-image-assets/assets/China/LT"),
+    re_vct = ee.ImageCollection("projects/my-image-assets/assets/China/VCT"),
+    CCDC_tStart = ee.Image("projects/my-image-assets/assets/CCDC_tStart_year"),
+    VCT2 = ee.ImageCollection("projects/my-image-assets/assets/China/VCT2"),
+    BSI = ee.ImageCollection("projects/my-image-assets/assets/China/BSI"),
+    JX = ee.FeatureCollection("users/zsy11600/Jiangxi/Boundary/JxLine"),
+    CCDCRF = ee.ImageCollection("projects/my-image-assets/assets/China/CCDCRF"),
+    table = ee.FeatureCollection("projects/my-image-assets/assets/China/china_provinces_wgs84"),
+    Points_merge = ee.FeatureCollection("projects/my-image-assets/assets/China/trainingDataPoints_Merge"),
+    table2 = ee.FeatureCollection("projects/my-image-assets/assets/China/point_validation_all_xg_Merg"),
+    validation = ee.FeatureCollection("projects/my-image-assets/assets/China/Validation3749"),
+    validation_t3 = ee.FeatureCollection("projects/my-image-assets/assets/China/Points_t3_merge"),
+    CCDCRF2 = ee.ImageCollection("projects/my-image-assets/assets/China/CCDCRF2");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+// simple ensembles 
+
+
+
+var Points = validation_t3  //ee.FeatureCollection("projects/my-image-assets/assets/China/point_validation_all_young_stable");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+
+Map.setOptions({mapTypeId:"SATELLITE",})
+
+ 
+// load the imagecollection----------------------------------------------------
+var roi = table;
+var Points_validation = validation//Points_merge.filterMetadata('Presence','equals',1);
+
+//Points_merge.filterMetadata('Presence','equals',1);
+
+var CCDC_RF1 = CCDCRF2;
+var CCDC_RF = CCDC_RF1.mosaic();
+    
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+
+
+
+//rename the band of image
+var renameBand = function(image){
+  var img  = image.rename('b1')
+                  .copyProperties(image);
+  return img;
+}
+
+
+
+var vct2_col = VCT2.map(renameBand);
+// load the result of three algorithms
+var result_lt = LT_1.merge(LT_2).mosaic().unmask(0);
+
+//Map.addLayer(result_lt,{},'yod_lt');
+var result_vct = re_vct.merge(vct2_col).mosaic();
+var result_ccdc = CCDC_tStart;
+var result_bsi = BSI.mosaic();
+
+
+//print('LT',result_lt);
+//print('VCT',result_vct);
+
+//Map.addLayer(Points,{},'Points');
+
+
+//ensemble model result
+var Img_lt = result_lt.where(result_lt.lte(1987),0).unmask(0).rename('year')//.toShort()
+
+var Img_vct = result_vct.where(result_vct.lte(1986),0).rename('year')//.toShort();
+
+var Img_ccdc = result_ccdc.where(result_ccdc.lte(1987),0)
+                        .where(result_ccdc.eq(2021),0).rename('year')
+    //Img_ccdc = Img_ccdc.updateMask(Img_ccdc.gte(2011));//.toShort();
+    
+var Img_bsi = result_bsi.rename('year').toInt16()
+    //Img_bsi = Img_bsi.updateMask(Img_bsi.gte(2011));
+var Img_ccdc_rf = CCDC_RF.rename('year').unmask(0);
+
+//print('Img_bsi',Img_bsi);
+
+//image is masked
+var Img_lt_f = Img_lt.updateMask(Img_lt.neq(0)).toShort();
+var Img_vct_f = Img_vct.updateMask(Img_vct.neq(0)).toShort();
+var Img_ccdc_f = Img_ccdc.updateMask(Img_ccdc.neq(0)).toShort();
+var Img_bsi_f = Img_bsi;
+var Img_ccdc_rf_f = Img_ccdc_rf.updateMask(Img_ccdc_rf.neq(0)).toShort();
+
+
+
+//the value of VCT,BSI,LT is same,but ccdc is not true
+
+var ThreeResult_1 = Img_lt_f.updateMask(
+             Img_lt_f.subtract(Img_vct_f).eq(0)
+              )
+var ThreeResult_2 = Img_lt_f.updateMask(
+             Img_lt_f.subtract(Img_bsi_f).eq(0)
+              )  
+var ThreeResult_3 = Img_vct_f.updateMask(
+             Img_vct_f.subtract(Img_bsi_f).eq(0)
+              )
+              
+var ThreeResult = ee.ImageCollection([ThreeResult_1,ThreeResult_2,ThreeResult_3]).mosaic().toInt16().clip(roi) //the result is bsi, ccdc, vct
+    ThreeResult = ThreeResult.updateMask(Img_ccdc_f)
+    ThreeResult = ThreeResult.updateMask(
+              ThreeResult.subtract(Img_ccdc_f).abs().gte(5)
+      )
+
+var crude_object_removal = ThreeResult
+                              .updateMask(ThreeResult.connectedPixelCount(300, true).gte(300))
+                              .remap([1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020],
+                              [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1])
+                              .toInt8();
+                              
+print('ThreeResult',ThreeResult);
+print('crude_object_removal',crude_object_removal);
+
+Map.addLayer(ThreeResult,{},'ThreeResult');
+Map.addLayer(crude_object_removal,{},'crude_object_removal');
+
+Map.addLayer(Img_lt_f,{},'Img_lt_f',false);
+Map.addLayer(Img_vct_f,{},'Img_vct_f',false);
+Map.addLayer(Img_ccdc_f,{},'Img_ccdc_f',false);
+Map.addLayer(Img_bsi_f,{},'Img_bsi_f',false);
+
+
+// change the sequence of imgcollection
+var Img_col = ee.ImageCollection([Img_lt_f,Img_vct_f,Img_bsi_f])//.mosaic().toInt16().unmask(0);
+
+var Forest_all = Img_col.mosaic().toInt16().unmask(0).rename('year_pre').clip(roi)
+
+
+Map.addLayer(Forest_all,{},'Forest_all');
+//print('col',Img_col)
+//print('Img_merge',Forest_all);
+
+
+// // //extract the value of points in VCT
+// var Points_ccdc = Img_col_result_3.rename('year_pre').unmask(0).sampleRegions({
+// 		collection:Points,
+// 		//properties:'vct',
+// 		scale:30,
+// //	projection:null,
+// //	tileScale:true,
+// //  geometries:false,
+// })
+
+//print('Points_vct',Points_ccdc);
+
+
+// Export.table.toDrive({
+// 	collection:Points_ccdc,
+// 	description:'Points_3_out_4',
+// 	folder:'Points_China_Validation_third',
+// 	fileNamePrefix:'Points_3_out_4',
+// 	fileFormat:'CSV',
+// })
+
+
+
+// //export the image of result
+// Export.image.toDrive({
+// 		image:ThreeResult,
+// 	description:'SameValue_bsi_vct_lt',
+// 	folder:'Validate_CCDC',
+// 	fileNamePrefix:'SameValue_bsi_vct_lt',
+// 	region:roi,
+// 	scale:30,
+// 	crs:'EPSG:4326',
+// 	maxPixels:1e10,
+// })
+
+
+
+
+
+
+
+// var utils = require('projects/GLANCE:ccdcUtilities/api')
+// // Make grid and export different tasks for each one. 
+// var studyRegion = roi;
+// var grid = utils.Inputs.makeAutoGrid(studyRegion.geometry().bounds().buffer(1000000), 20)
+//   .filterBounds(studyRegion.geometry())
+//   .toList(100)
+
+// Map.addLayer(studyRegion, {}, 'studyRegion')
+
+// grid.size().evaluate(function(s) {
+//   print('# of grids: ', s)
+  
+//   for (var i = 0; i < s; i++) {
+//     var outGeo = ee.Feature(grid.get(i)).geometry()
+//       .intersection(studyRegion.geometry()) // Subset to study region
+      
+      
+      
+      
+      
+//   Map.addLayer(outGeo, {}, 'Grid ' + i)
+//   Export.image.toDrive({
+//     image:crude_object_removal,
+//     description:'ThreeResult_removal_'+i,
+// 	folder:'Validate_CCDC',
+// 	fileNamePrefix:'ThreeResult_removal_'+i,
+// //	dimensions:,
+// 	region:outGeo,
+// 	scale:30,
+// 	crs:'EPSG:4326',
+// //	crsTransform:,
+// 	maxPixels:1e13,
+// //	shardSize:,
+// //	fileDimensions:,
+// //	skipEmptyTiles:,
+// //	fileFormat:,
+// //	formatOptions:,
+// })
+  
+//   // Export.image.toAsset({
+//   //   image: grainImg,
+//   //   scale: 30,
+//   //   description: 'growth_lt_' + i,
+//   //   maxPixels: 1e13,
+//   //   region: outGeo,
+//   //   crs:'EPSG:4326',
+//   //   assetId: 'LT_Gain/' + 'growth_lt_' + i,
+//   // })
+//   }
+// })
+
+
+
+//************************************************
+//random some points in removal images
+var TrainingPoints = crude_object_removal.stratifiedSample({
+		numPoints:10000,
+	classBand:'remapped',
+	region:roi,
+	scale:30,
+	projection:'EPSG:4326',
+//	seed:false,
+//	classValues:null,
+//	classPoints:null,
+	geometries:true,
+})
+
+
+
+Export.table.toDrive({
+		collection:TrainingPoints,
+	description:'TrainingPoints_threerasult_notccdc',
+	
+	
+	
+	folder:'Validate_CCDC',
+	fileNamePrefix:'threerasult_notccdc_1',
+	fileFormat:'SHP',
+//	selectors:,
+//	maxVertices:,
+})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                 
+
+
+
+

@@ -1,0 +1,38 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var table = ee.FeatureCollection("users/zsy11600/Jiangxi/Boundary/JxLine");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var jx = table;
+
+var roi  = jx;
+
+var Sample =  require('users/zsy11600/public_repository:China/VCT/Sample_Points');
+var MeanBand = require('users/zsy11600/public_repository:China/VCT/SampleMean_v1');
+var GetIfz = require('users/zsy11600/public_repository:China/VCT/GetIfz')
+var GetThreshold = require('users/zsy11600/public_repository:China/VCT/Points_thre')
+
+//print(Sample,MeanBand)
+
+var Points = Sample.Sample(roi);
+
+var BandMeanList = MeanBand.SampleMean(Points,roi);
+
+
+//print(Points)
+//print(BandMeanList)
+
+var B3_mean = BandMeanList.get(0);
+var B5_mean = BandMeanList.get(1);
+var B7_mean = BandMeanList.get(2);
+var B3_std = BandMeanList.get(3);
+var B5_std = BandMeanList.get(4);
+var B7_std= BandMeanList.get(5);
+
+
+var ifzCol = GetIfz.GetIfzCol(roi,B3_mean,B5_mean,B7_mean,B3_std,B5_std,B7_std)
+//print('ifzCol',ifzCol)
+
+var GetThreValue = GetThreshold(roi,ifzCol);
+print('GetThreValue',GetThreValue)
+// get the ifz col after the input parameter above 
+
+

@@ -1,0 +1,208 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var Forest_2020 = ee.Image("projects/my-image-assets/assets/China/Forest_2020_china_v2");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+//times series analysis ----------------------------------------------
+//bestNeighbour
+
+
+var GetGrowYear = function GetGrowYear(ROI,fea1,value,col){
+var roi = ROI;
+var fea = fea1;
+var threshold = ee.Number(value.getInfo()).add(1);
+var FillIfzCol = col;
+
+
+
+var bestNeighbour = function(image,windowSize) {
+  var checkYearNum = ee.Number(windowSize).add(1); //调节时间窗口,需要做检测的年份windowSize is 1
+  var images = ee.List(image.get('neighbour'));
+  var endNum = ee.Number(images.length()).subtract(checkYearNum);
+  var indexList = ee.List.sequence(0,endNum);
+  
+  var imageList = indexList.map(function(index){
+    var startIndex = ee.Number(index);
+    var endIndex = startIndex.add(checkYearNum);
+    
+    var sImages = images.slice(startIndex,endIndex);
+    var collection = ee.ImageCollection.fromImages(sImages);
+        collection = collection.map(function(image){
+          var newImage = ee.Image.constant(0);
+              newImage = newImage.where(image.select('ifz').gte(threshold),1);
+          return newImage;
+    });
+    var sumImage = collection.sum();
+        sumImage = sumImage.where(sumImage.lt(checkYearNum),0); //此处决定连续几年
+    return sumImage;
+  });
+  var collection = ee.ImageCollection.fromImages(imageList);
+  var sumImage = collection.sum();
+      sumImage = sumImage.where(sumImage.gte(checkYearNum),1);
+      image = image.addBands(sumImage.rename('sum'));
+  return image;
+};
+
+
+
+//-----------------------------------------------------------
+function getChangeIFZimages(imgcol,windowSize){
+  var timeField = 'year';
+  var join = ee.Join.saveAll({
+      matchesKey:'neighbour',
+      ordering: 'system:time_start',
+      ascending: false
+  });
+  
+  var selFilter = ee.Filter.maxDifference({
+    difference:windowSize,
+    leftField:timeField,
+    rightField:timeField
+  });
+  
+  var selNeighbour = join.apply({
+    primary:imgcol,
+    secondary:imgcol,
+    condition:selFilter
+  });
+  
+  var sumCol = ee.ImageCollection(selNeighbour)
+              .map(function(image){
+                var newImage = bestNeighbour(image,windowSize);
+                    newImage = newImage.addBands(image.select('ifz').rename('ifz'));
+                    newImage = newImage.set('index',image.get('index'));
+                    newImage = newImage.set('year',image.get('year'));
+                    newImage = newImage.set('system:time_start',image.get('system:time_start'));
+                return newImage;
+              })
+              .select(['sum','ifz']);
+  return sumCol;
+}
+
+
+
+//get revovery images 
+function getRecoveryifzImages(imgCol,windowSize){
+  var timeField = 'year';
+  var join = ee.Join.saveAll({
+    matchesKey: 'neighbour'
+  });
+  
+  
+  var selFilter = ee.Filter.maxDifference({
+    difference: windowSize,//2, //2代表的是difference  意思就是左右两个影像如果年份相差不超过2就连接在一起，组成数据集
+    leftField: timeField,
+    rightField: timeField
+  });
+  
+  var selNeighbour = join.apply({
+    primary:imgCol,
+    secondary:imgCol,
+    condition:selFilter
+  })
+  
+  var func1 = function(image){
+    return image.addBands(image.select('sum').rename('type'));
+  };
+  
+  var func2 = function(images){
+    var newImage = ee.Image.constant(0);
+    var curImage = ee.Image(images.get(0));
+    var preImage = ee.Image(images.get(1));
+    var preSum = preImage.select('sum');
+    var curSum = curImage.select('sum');
+        newImage = newImage.where(curSum.eq(1),1);
+        newImage = newImage.where(preSum.eq(1).and(curSum.eq(0)),2);
+        
+    return curImage.addBands(newImage.rename('type'));
+  };
+
+  var sumCol = ee.ImageCollection(selNeighbour)
+                .map(function(image){
+                  var images = ee.List(image.get('neighbour'));
+                  var firImage = ee.Image(images.get(0));
+                  var secImage = ee.Image(images.get(1));
+                  var flag = ee.Number(secImage.get('year'))
+                            .gt(ee.Number(firImage.get('year')));
+                      image = ee.Algorithms.If(flag,func1(image),func2(images));
+                  return image;
+                })
+  return sumCol;
+}
+
+
+var windowSize = 1 
+var getChangeifzCol = getChangeIFZimages(FillIfzCol,windowSize); //1代表的是时间窗口，左右查找1年
+//print('getChangeifzCol',getChangeifzCol);
+
+var recifzCol = getRecoveryifzImages(getChangeifzCol,windowSize);
+//print('RecoveryifzCol',recifzCol);
+
+
+
+
+//extract the stable forest---------------------------------------------------
+var NeroImg3 = Forest_2020.clip(roi);
+var OneImage = recifzCol.sum();
+//print('OneImage',OneImage);
+
+var newImage = ee.Image.constant(0);
+    newImage = newImage.where(OneImage.select('sum').eq(0).and(OneImage.select('type').eq(0)).and(NeroImg3.eq(1)),1); //1 is stable forest
+
+var stableForest = newImage.clip(roi); //it is stable forest map the value is 1
+//print('stableForest',stableForest);
+
+
+//extract the year of recovery----------------------------------------------------------
+//sort the imgCollcetion
+var lastSerieImgCol = recifzCol.sort('system:time_start',false);
+//print('lastSerieImgCol',lastSerieImgCol);
+
+
+function TransferToYear(Image){
+  var year  = ee.Number(Image.get('year')).int16();
+
+  var NewImage = ee.Image.constant(0);
+      NewImage = NewImage.where(Image.eq(2),year.subtract(1))
+      NewImage = NewImage.where(Image.neq(2),2022).rename('RecYear');//此处是为了让波段范围一致
+  return Image.addBands(NewImage);
+}
+
+
+function AddYear(Image){
+  
+  var NewImage = Image.where(Image.eq(2022),0)//再把2022转换为0,为了让后面提取最大值使用
+      //NewImage = NewImage.where(lastSerieImgCol.select('type').first().neq(0),0)//2022年必须为恢复值 使用neq的时候，必须满足影像有很多值，如果是mask的值，则不能运算,有可能2020年是变化值
+      NewImage = NewImage.where(stableForest.eq(1),0); //如果提取为永久森林，则不参与运算,
+      NewImage = NewImage.where(NeroImg3.eq(0),0); //2020年必须为森林，否则不参与运算
+    
+    
+  return NewImage;
+}
+
+
+
+var RecYear = recifzCol.select('type').map(TransferToYear).select('RecYear').map(AddYear);
+
+var GrowYear = RecYear.max().clip(roi);//
+
+
+
+Export.image.toDrive({
+  image:GrowYear,
+  description:'forestYear_' + fea.get('ID').getInfo(),
+  folder:'China/VCT',
+  fileNamePrefix: 'Forest_Year_VCT_' + fea.get('ID').getInfo(), 
+  region:roi,
+  scale:30,
+  crs:'EPSG:4326',
+  maxPixels:1e13,
+})
+
+return GrowYear;
+
+}
+
+exports.GetGrowYear = GetGrowYear;
+
+
+
+

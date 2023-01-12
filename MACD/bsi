@@ -1,0 +1,249 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var table = ee.FeatureCollection("users/zsy11600/Jiangxi/Boundary/JxLine"),
+    testPoint = 
+    /* color: #d63000 */
+    /* shown: false */
+    ee.Geometry.Point([114.15522319898442, 27.762996901027268]),
+    CarePoints = 
+    /* color: #d63000 */
+    /* shown: false */
+    ee.Geometry.Point([114.12210305328729, 27.754242636314423]),
+    ESA10M = ee.ImageCollection("ESA/WorldCover/v100"),
+    table2 = ee.FeatureCollection("projects/my-image-assets/assets/Jiangxi/Chouyang15284"),
+    No1 = /* color: #d63000 */ee.Geometry.Point([114.14442304683413, 25.84435513090742]),
+    No2 = 
+    /* color: #98ff00 */
+    /* shown: false */
+    ee.Geometry.Point([116.48272607515287, 27.89579499960165]),
+    No3 = 
+    /* color: #0b4a8b */
+    /* shown: false */
+    ee.Geometry.Point([114.88322434466271, 24.7992836735395]),
+    No4 = 
+    /* color: #ffc82d */
+    /* shown: false */
+    ee.Geometry.Point([114.15521739325109, 27.763038833285844]),
+    Forest2020 = ee.Image("projects/my-image-assets/assets/China/Forest_2020_china_v2"),
+    China = ee.FeatureCollection("projects/my-image-assets/assets/China/china_provinces_wgs84");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**
+  * 获取样本点的bsi值，并记录，提取森林年龄，和稳定森林
+  * 
+  * 
+  * dr.zhang 2022.03-10
+  * 
+  */
+
+
+
+
+/*分别计算每个样本点的bsi值
+*
+*
+*
+*/
+
+var testPoint =No4   //table2.filterMetadata("OBJECTID_1", "equals", ee.List(table2.aggregate_array("OBJECTID_1")).get(32));
+
+
+
+var testPoint1 = No1;
+// print('testPoint_NL',testPoint1.get('PING_JUN_N'));
+// print('testPoint_NL',testPoint1.get('ORIG_FID'));
+// print('testPoint',testPoint);
+
+// Map.centerObject(testPoint1,16);
+Map.addLayer(testPoint,{},"testPoint");
+
+var region  = China;
+
+var maskClouds = function(image){ 
+    var cfmask = image.select("pixel_qa");    
+    return image.updateMask(cfmask.eq(66));    
+      };
+      
+      
+      
+//去云的算法            
+function rmCloud (image){ 
+  var qa = image.select('pixel_qa')  
+  var cloudMask = qa.bitwiseAnd(1 << 3).eq(0) 
+  var cloudShadowMask = qa.bitwiseAnd(1 << 5).eq(0) 
+  var mask_all = cloudMask.and(cloudShadowMask) 
+  return image.updateMask(mask_all) 
+}
+
+
+
+var addBSI = function(image) {
+        return image 
+              .addBands(image.expression(
+                            '((b6+b4)-(b5+b2))/((b6+b4)+(b5+b2))*1.0', {
+                            'b2': image.select('B1'),
+                            'b4': image.select('B3'),
+                            'b5': image.select('B4'),
+                            'b6': image.select('B5')}).rename("bsi"));
+};
+      
+
+
+//difine the imgCol
+      var l5 = ee.ImageCollection("LANDSAT/LT05/C01/T1_SR").map(rmCloud),
+          l7 = ee.ImageCollection("LANDSAT/LE07/C01/T1_SR").map(rmCloud),
+          l8 = ee.ImageCollection("LANDSAT/LC08/C01/T1_SR").map(rmCloud).select(['B2','B4','B5','B6'],['B1','B3','B4','B5']);
+      var danylo2 = ee.ImageCollection("users/OlhaDanylo/palmoil/danylo_v2");
+      var grid = ee.FeatureCollection("users/OlhaDanylo/global/tropics/tropics_grid");
+      var dem = ee.Image("USGS/SRTMGL1_003");
+      print(grid)
+      
+      var landsat = l7.merge(l5).merge(l8)
+                      .filterDate('1985-01-01', '2022-01-01')
+                      //.map(maskClouds)
+                      .map(addBSI)//.filterBounds(table);
+
+      var bsi_min = landsat.select("bsi")
+                           .filterDate('2017-01-01', '2018-01-01')
+                           .map(function(im){
+                                              return im.updateMask(im.select("bsi").gte(-55.42));
+                                             })
+                           .median();
+      
+      var im_selected = landsat
+                          .select("bsi")
+                          .map(function(im){
+                                            var diff = im.date().difference(ee.Date('2000-01-01'), 'year');
+                                            return ee.Image(im).addBands(ee.Image(diff).float());
+                              });
+                          
+ 
+      var years = ee.List.sequence(1985, 2021);
+      var month = ee.List.sequence(1, 12);
+      var dates = years.map(function(year){
+                              var cur_dates = month.map(function(month_cur){
+                                return ee.Date.fromYMD(year, month_cur, 1);
+                              });
+                              return cur_dates;
+                            }).flatten();
+      
+      dates = dates.slice(6, dates.length().subtract(6));
+      
+
+      //moving yearly average
+      var im_selected_year_mean = dates.map(function(date){
+                                                    var start = ee.Date(date).advance(-6, "month");
+                                                    var end = ee.Date(date).advance(6, "month");
+                                                    var reducer = ee.Reducer.median().combine({reducer2:ee.Reducer.count(), sharedInputs:true});
+                                                    return ee.Image(landsat.filterDate(start, end)
+                                                                            .select("bsi")
+                                                                            .reduce(reducer))
+                                                                    .rename(["bsi", "bsi_count"])
+                                                    .set("system:time_start", start.millis());
+                                                  });
+      
+      im_selected_year_mean = ee.ImageCollection(im_selected_year_mean)
+                                                      .map(function(im){
+                                                                          return im.updateMask(im.select("bsi_count").gte(3))
+                                                                                   .select("bsi");
+                                                       });
+                 
+
+
+
+
+//人工林的年龄---------------------------------------------
+      var bsi_thres = 0;
+      print('im_selected_year_mean',im_selected_year_mean);
+      
+var imgCol_lte10 = im_selected_year_mean.filterDate('1986-01-01','2022-01-01');
+var im_disturb_yearly = ee.ImageCollection(imgCol_lte10)
+                                      .map(function(im){
+                                        return  im.select("bsi")
+                                                .updateMask(im.select("bsi").gte(bsi_thres))
+                                                .addBands(ee.Image(im.date().difference(ee.Date('2021-01-01'), 'year')).float() 
+                                                .updateMask(im.select("bsi").gte(bsi_thres))
+                                                .rename("constant"));
+                                            })
+                                      .qualityMosaic("constant").select(["constant"]);
+                                      
+var tree_Age =  im_disturb_yearly.multiply(ee.Image.constant(-1)).round().int16()
+    tree_Age = tree_Age.updateMask(tree_Age.neq(0))
+                       .subtract(ee.Image.constant(2021))
+                       .multiply(ee.Image.constant(-1))
+                       .updateMask(Forest2020.eq(1))
+
+
+print('im_disturb_yearly',tree_Age)
+Map.addLayer(tree_Age,{},'yearly');
+Map.addLayer(Forest2020,{},'Forest2020');
+
+
+//show the chart of one point
+var chart1= ui.Chart.image.series({
+  imageCollection:im_selected_year_mean,
+  region:testPoint,
+  reducer:ee.Reducer.mean(),
+  scale:30,
+}).setOptions({title:'BSIValue'})
+
+print(chart1);
+
+
+
+//export the image -----------------
+// Export.image.toDrive({image:tree_Age,
+//                     region:region, 
+//                     maxPixels:3608235476110, 
+//                     scale:30, 
+//                     folder:"BSI_China",
+//                     crs:'EPSG:4326',
+//                     fileNamePrefix:"BSI_Yearly_china",
+//                     description: "Bsi_Yearly_china",
+// })
+
+
+var utils = require('projects/GLANCE:ccdcUtilities/api')
+// Make grid and export different tasks for each one. 
+var studyRegion = region;
+var grid = utils.Inputs.makeAutoGrid(studyRegion.geometry().bounds().buffer(1000000), 20)
+  .filterBounds(studyRegion.geometry())
+  .toList(100)
+
+Map.addLayer(studyRegion, {}, 'studyRegion')
+
+grid.size().evaluate(function(s) {
+  print('# of grids: ', s)
+  
+  for (var i = 0; i < s; i++) {
+    var outGeo = ee.Feature(grid.get(i)).geometry()
+      .intersection(studyRegion.geometry()) // Subset to study region
+  Map.addLayer(outGeo, {}, 'Grid ' + i)
+//   Export.image.toDrive({
+// 		image:forest_mask,
+// 	description:'BSI_Yearly_china'+i,
+// 	folder:'BSI_China',
+// 	fileNamePrefix:'BSI_Yearly_china_'+i,
+// //	dimensions:,
+// 	region:outGeo,
+// 	scale:30,
+// 	crs:'EPSG:4326',
+// //	crsTransform:,
+// 	maxPixels:1e13,
+// //	shardSize:,
+// //	fileDimensions:,
+// //	skipEmptyTiles:,
+// //	fileFormat:,
+// //	formatOptions:,
+// })
+  
+  Export.image.toAsset({
+    image: tree_Age,
+    scale: 30,
+    description: 'BSI_Yearly_china_' + i,
+    maxPixels: 1e13,
+    region: outGeo,
+    crs:'EPSG:4326',
+    assetId: 'China/BSI/' + 'BSI_Yearly_china_' + i,
+  });
+  }
+})
+

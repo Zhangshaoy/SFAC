@@ -1,0 +1,573 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var image = ee.Image("projects/my-image-assets/assets/China/Forest_2020_china_v3"),
+    table = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[113.27496565534392, 29.865740069846126],
+          [113.27496565534392, 27.806369260220663],
+          [116.20831526471892, 27.806369260220663],
+          [116.20831526471892, 29.865740069846126]]], null, false),
+    testPoint = /* color: #98ff00 */ee.Geometry.Point([115.52099296645854, 29.158242347736746]),
+    Forest_2020 = ee.Image("projects/my-image-assets/assets/China/Forest_2020_china_v2");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+
+
+
+//Require the code of calculate the band mean and std;
+var Sample = require('users/zsy11600/public_repository:China/VCT/SampleMean');
+print(Sample)
+
+var roi = table;
+var BandMeanList  = Sample.SampleMean(roi,image); //table is boundary, image is image need to sample 
+var B3_mean = BandMeanList.get(0);
+var B5_mean = BandMeanList.get(1);
+var B7_mean = BandMeanList.get(2);
+var B3_std = BandMeanList.get(3);
+var B5_std = BandMeanList.get(4);
+var B7_std= BandMeanList.get(5);
+
+
+print('List',BandMeanList)
+print(B3_mean);
+
+
+
+
+
+/*
+*
+*export the forest point mean value and sd 
+*get the imagecollection----------------------------------------------------
+
+*/
+
+//the second way to get the srcol--------------------------------------------
+var startDate = ee.Date.fromYMD(1986,1,1);
+var endDate = ee.Date.fromYMD(2021,12,31);
+var table = roi;
+
+/*
+ function of  get acquiring Landsat SR imageCollection
+*/
+function getImageCollection(studyArea,startDate,endDate){
+
+  var sensorBandDictLandsatSR =ee.Dictionary({
+                        L8 : ee.List([1,2,3,4,5,7,6]),
+                        L7 : ee.List([0,1,2,3,4,5,6]),
+                        L5 : ee.List([0,1,2,3,4,5,6])
+  });
+  var bandNamesLansatSR = ee.List(['blue','green','red','nir','swir1','B10','swir2']);
+  
+  var l5sr = ee.ImageCollection('LANDSAT/LT05/C01/T1_SR')
+              .filterDate(startDate,endDate)
+              .filterBounds(studyArea)
+              .filterMetadata('CLOUD_COVER','less_than',50)
+              .map(cloudMaskL457)
+              .select(sensorBandDictLandsatSR.get('L5'), bandNamesLansatSR);
+  var l7sr = ee.ImageCollection('LANDSAT/LE07/C01/T1_SR')
+              .filterDate(startDate,endDate)
+              .filterDate('2012-01-02','2012-12-30')
+              .filterBounds(studyArea)
+              .filterMetadata('CLOUD_COVER','less_than',50)
+              .map(cloudMaskL457)
+              .select(sensorBandDictLandsatSR.get('L7'), bandNamesLansatSR)
+              .map(function(image){
+                  var filled1a = image.focal_mean(2, 'square', 'pixels', 1)
+                  return filled1a.blend(image)
+                          .set('system:time_start',image.get('system:time_start'));
+                  });
+  var l8sr = ee.ImageCollection('LANDSAT/LC08/C01/T1_SR')
+              .filterDate(startDate,endDate)
+              .filterBounds(studyArea)
+              .filterMetadata('CLOUD_COVER','less_than',50)
+              .map(maskCloud)
+              .select(sensorBandDictLandsatSR.get('L8'), bandNamesLansatSR);
+  var ls = ee.ImageCollection(l5sr.merge(l7sr).merge(l8sr));
+  return ls;
+}
+
+
+
+
+
+/*
+function of remove cloud
+*/
+var cloudMaskL457 = function(image) {
+  var qa = image.select('pixel_qa');
+  // If the cloud bit (5) is set and the cloud confidence (7) is high
+  // or the cloud shadow bit is set (3), then it's a bad pixel.
+  var cloud = qa.bitwiseAnd(1 << 5)
+                  .and(qa.bitwiseAnd(1 << 7))
+                  .or(qa.bitwiseAnd(1 << 3));
+  // Remove edge pixels that don't occur in all bands
+  var mask2 = image.mask().reduce(ee.Reducer.min());
+  return image.updateMask(cloud.not()).updateMask(mask2);
+};
+
+
+//L8 cloud mask
+  function maskCloud(image) {
+    var cloudBit = 5;
+    var cloudshadowBit = 3;
+    var cloudBitMask = Math.pow(2, cloudBit); // 0x400
+    var cloudshadowBitMask = Math.pow(2, cloudshadowBit); // 0x800
+    function mask_landsat_clouds(image) {
+    var qa = image.select('pixel_qa');
+    var mask = qa.bitwiseAnd(cloudBitMask).eq(0).and( // no clouds
+              qa.bitwiseAnd(cloudshadowBitMask).eq(0)); // no cloudshadow
+    return image.updateMask(mask);
+  }
+    return image;
+  }
+  
+
+var ls = getImageCollection(table,startDate,endDate);
+
+//print('LS_ImageCollection',ls);
+
+var years = ee.List.sequence(1986,2021);
+var YearCollection = ee.ImageCollection.fromImages(
+  years.map(
+    function(y){
+      var w = ls.filter(ee.Filter.calendarRange(y,y,'year'))
+                .filter(ee.Filter.calendarRange(1,365,'day_of_year'))
+                .median()
+                
+      var w1 = ls.filter(ee.Filter.calendarRange(y,y,'year')).first()    
+      return w.set('year',y)
+              .set('system:time_start',w1.get('system:time_start'))
+    }).flatten()
+);
+
+//print('yearCollection',YearCollection);
+
+function changeTheName(image){
+  var img_b3 = image.select('red').rename('B3');
+  var img_b5 = image.select('swir1').rename('B5');
+  var img_b7 = image.select('swir2').rename('B7');
+  
+  return image.addBands(img_b3).addBands(img_b5).addBands(img_b7);
+
+}
+
+var yearCol = YearCollection.map(changeTheName).select(['B3','B5','B7']);
+print('yearCol',yearCol);
+
+
+/*
+calculate the IFZ index----------------------------------------------------------
+all chart use testPoint3
+*/
+var b3_mean = ee.Image.constant(ee.Number(B3_mean.getInfo()))//(414.8993272); 
+var b5_mean = ee.Image.constant(ee.Number(B5_mean.getInfo()))//(1342.152677);
+var b7_mean = ee.Image.constant(ee.Number(B7_mean.getInfo()))//(601.182857);
+var b3_stdDev = ee.Image.constant(ee.Number(B3_std.getInfo()))
+var b5_stdDev = ee.Image.constant(ee.Number(B5_std.getInfo()))
+var b7_stdDev = ee.Image.constant(ee.Number(B7_std.getInfo()))
+
+
+var testPoint3 = testPoint;  //the plot is used to cal chart
+
+
+function getIFZ(bandImage){
+    var b3 = bandImage.select('B3');
+    var fz_b3 = b3.expression(
+        '(b-b_mean)/b_std',{
+        'b':b3,
+        'b_mean':b3_mean,
+        'b_std':b3_stdDev
+        });
+    
+    var b5 = bandImage.select('B5');
+    var fz_b5 = b5.expression(
+        '(b-b_mean)/b_std',{
+          'b':b5,
+          'b_mean':b5_mean,
+          'b_std':b5_stdDev
+        });
+        
+    var b7 = bandImage.select('B7');
+    var fz_b7 = b7.expression(
+        '(b-b_mean)/b_std',{
+          'b':b7,
+          'b_mean':b7_mean,
+          'b_std':b7_stdDev
+        });
+    
+    var nb = ee.Image.constant(3);
+    var ifz = bandImage.expression(
+      '((fz_b3*fz_b3)+(fz_b5*fz_b5)+(fz_b7*fz_b7))/nb',{
+      'fz_b3':fz_b3,
+      'fz_b5':fz_b5,
+      'fz_b7':fz_b7,
+      'nb':nb
+    });
+        ifz = ifz.rename('ifz').sqrt();
+    return ifz;
+}
+ 
+
+var ifzcol = yearCol.map(function(image){ //THE collection need to change
+    var ifzImg = getIFZ(image)
+        ifzImg = ifzImg.where(ifzImg.gte(18),4.7); //消除云雾的计算错误
+    
+    var year = image.get('system:time_start');//ee.Date(image.get('system:time_start')).get('year');
+    
+    var y = ee.Date(image.get('system:time_start'));
+    
+    ifzImg = ifzImg.set('system:time_start',year)
+          .set('system:index',image.get('system:index'))
+          .set('year',image.get('year'));
+    return ifzImg;  
+    
+})
+ 
+print('ifzcol',ifzcol);
+
+
+
+//对ifz空值进行填补
+function FillGap (image){
+  var img_Fill = image.focalMean(1,'square','pixels',8)
+                      .copyProperties(image)
+                      .set('system:time_start',image.get('system:time_start'));
+  return img_Fill;
+}
+ 
+var FillIfzCol = ifzcol.map(FillGap);
+print('FillIfzCol',FillIfzCol);
+
+
+
+//test one point ifz value
+var OneValue = FillIfzCol.first().reduceRegion({
+    reducer:ee.Reducer.mean(),
+    geometry:testPoint3,
+    scale:30,
+    maxPixels:1e13
+});
+
+//print('fisrtValue',OneValue);
+ 
+
+var chart1= ui.Chart.image.series({
+  imageCollection:FillIfzCol,
+  region:testPoint3,
+  reducer:ee.Reducer.mean(),
+  scale:30,
+}).setOptions({title:'ifzValue'})
+
+print('chart1',chart1);
+
+
+
+
+//times series analysis ----------------------------------------------
+//bestNeighbour
+/**
+* [getChangeifzCol 获取扰动影像列表]
+* @param  {[type]} imgCol     [影像集合]
+* @param  {[type]} windowSize [左右查找影像的范围：目前是2年]
+* @return {[type]}            [description]
+*/
+var bestNeighbour = function(image,windowSize) {
+  var checkYearNum = ee.Number(windowSize).add(1); //调节时间窗口,需要做检测的年份windowSize is 1
+  var images = ee.List(image.get('neighbour'));
+  var endNum = ee.Number(images.length()).subtract(checkYearNum);
+  var indexList = ee.List.sequence(0,endNum);
+  
+  var imageList = indexList.map(function(index){
+    var startIndex = ee.Number(index);
+    var endIndex = startIndex.add(checkYearNum);
+    
+    var sImages = images.slice(startIndex,endIndex);
+    var collection = ee.ImageCollection.fromImages(sImages);
+        collection = collection.map(function(image){
+          var newImage = ee.Image.constant(0);
+              newImage = newImage.where(image.select('ifz').gte(4.8),1);
+          return newImage;
+    });
+    var sumImage = collection.sum();
+        sumImage = sumImage.where(sumImage.lt(checkYearNum),0); //此处决定连续几年
+    return sumImage;
+  });
+  var collection = ee.ImageCollection.fromImages(imageList);
+  var sumImage = collection.sum();
+      sumImage = sumImage.where(sumImage.gte(checkYearNum),1);
+      image = image.addBands(sumImage.rename('sum'));
+  return image;
+};
+
+
+//-------------------------------------------------
+
+
+//getChangeIFZimages
+// function getChangeIFZimages111(imgcol,windowSize){
+//   var timeField = 'year';
+//   var join = ee.Join.saveAll({
+//       matchesKey:'neighbour',
+//       ordering: 'system:time_start',
+//       ascending: false
+//   });
+  
+//   var selFilter = ee.Filter.maxDifference({
+//     difference:windowSize,
+//     leftField:timeField,
+//     rightField:timeField
+//   });
+  
+//   var selNeighbour = join.apply({
+//     primary:imgcol,
+//     secondary:imgcol,
+//     condition:selFilter
+//   });
+  
+//   var sumCol = ee.ImageCollection(selNeighbour)
+//               .map(function(image){
+//                 var newImage = bestNeighbour(image,windowSize);
+//                     newImage = newImage.addBands(image.select('ifz').rename('ifz'));
+//                     newImage = newImage.set('index',image.get('index'));
+//                     newImage = newImage.set('year',image.get('year'));
+//                     newImage = newImage.set('system:time_start',image.get('system:time_start'));
+//                 return newImage;
+//               })
+//               .select(['sum','ifz']);
+//   return sumCol;
+// }
+
+// //test the imgcol
+// var windowSize = 2
+// var getChangeifzCol1 = getChangeIFZimages111(ifzcol,windowSize); //2代表的是时间窗口，连续年份为2年  前后2年
+// print('getChangeifzCol1',getChangeifzCol1)
+
+
+//-----------------------------------------------------------
+function getChangeIFZimages(imgcol,windowSize){
+  var timeField = 'year';
+  var join = ee.Join.saveAll({
+      matchesKey:'neighbour',
+      ordering: 'system:time_start',
+      ascending: false
+  });
+  
+  var selFilter = ee.Filter.maxDifference({
+    difference:windowSize,
+    leftField:timeField,
+    rightField:timeField
+  });
+  
+  var selNeighbour = join.apply({
+    primary:imgcol,
+    secondary:imgcol,
+    condition:selFilter
+  });
+  
+  var sumCol = ee.ImageCollection(selNeighbour)
+              .map(function(image){
+                var newImage = bestNeighbour(image,windowSize);
+                    newImage = newImage.addBands(image.select('ifz').rename('ifz'));
+                    newImage = newImage.set('index',image.get('index'));
+                    newImage = newImage.set('year',image.get('year'));
+                    newImage = newImage.set('system:time_start',image.get('system:time_start'));
+                return newImage;
+              })
+              .select(['sum','ifz']);
+  return sumCol;
+}
+
+
+
+
+
+//get revovery images 
+function getRecoveryifzImages(imgCol,windowSize){
+  var timeField = 'year';
+  var join = ee.Join.saveAll({
+    matchesKey: 'neighbour'
+  });
+  
+  
+  var selFilter = ee.Filter.maxDifference({
+    difference: windowSize,  //2, //2代表的是difference  意思就是左右两个影像如果年份相差不超过2就连接在一起，组成数据集
+    leftField: timeField,
+    rightField: timeField
+  });
+  
+  var selNeighbour = join.apply({
+    primary:imgCol,
+    secondary:imgCol,
+    condition:selFilter
+  })
+  
+  var func1 = function(image){
+    return image.addBands(image.select('sum').rename('type'));
+  };
+  
+  var func2 = function(images){
+    var newImage = ee.Image.constant(0);
+    var curImage = ee.Image(images.get(0));
+    var preImage = ee.Image(images.get(1));
+    var preSum = preImage.select('sum');
+    var curSum = curImage.select('sum');
+        newImage = newImage.where(curSum.eq(1),1);
+        newImage = newImage.where(preSum.eq(1).and(curSum.eq(0)),2);
+        
+    return curImage.addBands(newImage.rename('type'));
+  };
+
+  var sumCol = ee.ImageCollection(selNeighbour)
+                .map(function(image){
+                  var images = ee.List(image.get('neighbour'));
+                  var firImage = ee.Image(images.get(0));
+                  var secImage = ee.Image(images.get(1));
+                  var flag = ee.Number(secImage.get('year'))
+                            .gt(ee.Number(firImage.get('year')));
+                      image = ee.Algorithms.If(flag,func1(image),func2(images));
+                  return image;
+                })
+  return sumCol;
+}
+
+
+var windowSize = 1 
+var getChangeifzCol = getChangeIFZimages(FillIfzCol,windowSize); //1代表的是时间窗口，左右查找1年
+//print('getChangeifzCol',getChangeifzCol);
+
+var recifzCol = getRecoveryifzImages(getChangeifzCol,windowSize);
+//print('RecoveryifzCol',recifzCol);
+
+
+var chart2= ui.Chart.image.series({
+  imageCollection:getChangeifzCol.select('sum'),
+  region:testPoint3,
+  reducer:ee.Reducer.mean(),
+  scale:30,
+}).setOptions({title:'ChangeifzValue'})
+
+print('chart2_change',chart2);
+
+
+
+var chart3= ui.Chart.image.series({
+  imageCollection:recifzCol.select('type'),
+  region:testPoint3,
+  reducer:ee.Reducer.mean(),
+  scale:30,
+}).setOptions({title:'recoveryifzValue'})
+
+print('chart3_recovery',chart3);
+
+
+
+
+//extract the stable forest---------------------------------------------------
+var NeroImg3 = Forest_2020;
+var OneImage = recifzCol.sum();
+print('OneImage',OneImage);
+
+var newImage = ee.Image.constant(0);
+    newImage = newImage.where(OneImage.select('sum').eq(0).and(OneImage.select('type').eq(0)).and(NeroImg3.eq(1)),1); //1 is stable forest
+
+var stableForest = newImage.clip(roi); //it is stable forest map the value is 1
+//print('stableForest',stableForest);
+
+
+// var OneSumValue = stableForest.reduceRegion({
+//     reducer:ee.Reducer.mean(),
+//     geometry:testPoint,
+//     scale:30,
+//     maxPixels:1e13
+// });
+
+//print('SumRecValue',OneSumValue);
+
+
+Export.image.toDrive({
+  image:stableForest,
+  description:'stableforest',
+  folder:'China/VCT',
+  region:roi,
+  scale:30,
+  crs:'EPSG:4326',
+  maxPixels:1e13,
+})
+
+
+
+//extract the year of recovery----------------------------------------------------------
+//sort the imgCollcetion
+var lastSerieImgCol = recifzCol.sort('system:time_start',false);
+//print('lastSerieImgCol',lastSerieImgCol);
+
+
+function TransferToYear(Image){
+  var year  = ee.Number(Image.get('year')).int16();
+
+  var NewImage = ee.Image.constant(0);
+      NewImage = NewImage.where(Image.eq(2),year.subtract(2))
+      NewImage = NewImage.where(Image.neq(2),2022).rename('RecYear');//此处是为了让波段范围一致
+  return Image.addBands(NewImage);
+}
+
+
+function AddYear(Image){
+  
+  var NewImage = Image.where(Image.eq(2022),0)//再把2022转换为0,为了让后面提取最大值使用
+      //NewImage = NewImage.where(lastSerieImgCol.select('type').first().neq(0),0)//2022年必须为恢复值 使用neq的时候，必须满足影像有很多值，如果是mask的值，则不能运算,有可能2020年是变化值
+      NewImage = NewImage.where(stableForest.eq(1),0); //如果提取为永久森林，则不参与运算,
+      NewImage = NewImage.where(NeroImg3.eq(0),0); //2020年必须为森林，否则不参与运算
+     
+      
+  return NewImage;
+}
+
+
+
+var RecYear = recifzCol.select('type').map(TransferToYear).select('RecYear').map(AddYear);
+//print('RecYear',RecYear);
+
+
+
+var chart4= ui.Chart.image.series({
+  imageCollection:RecYear,
+  region:testPoint3,
+  reducer:ee.Reducer.mean(),
+  scale:30,
+}).setOptions({title:'recoveryYear'})
+
+print('chart4_recovery',chart4);
+
+
+
+var GrowYear = RecYear.max().clip(roi);//
+Map.addLayer(GrowYear,{},'GrowYear');
+
+Export.image.toDrive({
+  image:GrowYear,
+  description:'forestYear',
+  folder:'China/VCT',
+  fileNamePrefix: 'Forest_Year_VCT', 
+  region:roi,
+  scale:30,
+  crs:'EPSG:4326',
+  maxPixels:1e13,
+})
+
+Export.image.toAsset({
+          image: GrowYear,
+          assetId:'forest_year_vct',
+          description: 'forest_year_vct', 
+          scale: 30, 
+          crs:'EPSG:4326',
+          region: roi,
+          maxPixels:1e13
+});
+

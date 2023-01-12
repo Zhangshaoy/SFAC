@@ -1,0 +1,128 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var table = ee.FeatureCollection("users/zsy11600/Jiangxi/Boundary/JxLine"),
+    GFC = ee.Image("UMD/hansen/global_forest_change_2021_v1_9"),
+    ESA10M = ee.ImageCollection("ESA/WorldCover/v100");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+
+/*
+ only need to input the roi parameter 
+
+*/
+
+var Sample = function Sample(ROI){
+var roi = ROI;
+
+
+//---------------------------------------------------------------------------
+// extract the persisting forest by the change and recovery IFZ are 0
+
+//ESA landCover 
+var ESA = ESA10M.mosaic()
+var ImgForest_Esa = ESA.select('Map');
+//var ImgShrub_Esa = ESA.select('Map').eq(20);
+
+
+var NeroImg1 = ee.Image.constant(0)
+    NeroImg1 = NeroImg1.where(ImgForest_Esa.eq(10),1).clip(roi); //only need forest
+
+//print('ImgForest_Esa',NeroImg1)
+
+
+
+//Esri land cover
+function clip(Image){ 
+  return Image.clip(roi)
+}
+var esri_lulc10 = ee.ImageCollection("projects/sat-io/open-datasets/landcover/ESRI_Global-LULC_10m").map(clip)
+ 
+var lulc = esri_lulc10.qualityMosaic('b1').clip(roi)
+
+var NeroImg2 = ee.Image.constant(0)
+    NeroImg2 = NeroImg2.where(lulc.eq(2),1).clip(roi);
+
+//print('ImgForest_Esri',NeroImg2);
+
+
+
+//Forest 2020
+var ThreeImg = ee.ImageCollection.fromImages([NeroImg1,NeroImg2]).sum();
+var NeroImg3 = ee.Image.constant(0)
+    NeroImg3 = NeroImg3.where(ThreeImg.eq(2),1).clip(roi).rename(['Forest']);
+  
+//print('Forest_2020',NeroImg3);
+
+//Map.addLayer(NeroImg3,{},'Forest_2020');
+
+
+//GFCC dataset
+var gfcc_2000 = ee.ImageCollection('NASA/MEASURES/GFCC/TC/v3')
+                  .filter(ee.Filter.date('2000-01-01', '2000-12-31'));
+var gfcc_2000_f = gfcc_2000.select('tree_canopy_cover').mosaic().clip(roi)
+    gfcc_2000_f = gfcc_2000_f.updateMask(gfcc_2000_f.gt(30))
+
+var gfcc_2005 = ee.ImageCollection('NASA/MEASURES/GFCC/TC/v3')
+                  .filter(ee.Filter.date('2005-01-01', '2005-12-31'));
+var gfcc_2005_f = gfcc_2005.select('tree_canopy_cover').mosaic().clip(roi)
+    gfcc_2005_f = gfcc_2005_f.updateMask(gfcc_2005_f.gte(30))
+
+
+var gfcc_2010 = ee.ImageCollection('NASA/MEASURES/GFCC/TC/v3')
+                  .filter(ee.Filter.date('2010-01-01', '2010-12-31'));
+var gfcc_2010_f = gfcc_2010.select('tree_canopy_cover').mosaic().clip(roi)
+    gfcc_2010_f = gfcc_2010_f.updateMask(gfcc_2010_f.gte(30));
+
+var gfcc_2015 = ee.ImageCollection('NASA/MEASURES/GFCC/TC/v3')
+                  .filter(ee.Filter.date('2015-01-01', '2015-12-31'));
+var gfcc_2015_f = gfcc_2015.select('tree_canopy_cover').mosaic().clip(roi)
+    gfcc_2015_f = gfcc_2015_f.updateMask(gfcc_2015_f.gte(30));
+
+
+//hansen data -------------------------------------------------------------
+var FImage = ee.Image("UMD/hansen/global_forest_change_2021_v1_9").clip(roi);
+//Map.addLayer(FImage,{},'FImage')
+
+var forest = FImage.select('treecover2000');
+
+var forest_mask = forest.updateMask(forest.gte(50))
+    forest_mask = forest_mask.where(forest_mask.gte(50),1)
+    forest_mask = forest_mask.where(NeroImg3.eq(0),0)
+    forest_mask = forest_mask.where(gfcc_2015_f.eq(0),0)
+    forest_mask = forest_mask.where(gfcc_2000_f.eq(0),0)
+    forest_mask = forest_mask.where(gfcc_2010_f.eq(0),0)
+    forest_mask = forest_mask.where(gfcc_2005_f.eq(0),0)
+    forest_mask = forest_mask.updateMask(forest_mask.eq(1))
+    
+//print('forest_mask',forest_mask)
+//Map.addLayer(forest_mask,{},'forest_mask')
+
+var Points = forest_mask.stratifiedSample({
+    numPoints:50,
+    classBand:'treecover2000',
+    region:roi,
+    scale: 30,
+    seed: 123,
+    geometries:true,
+    
+})
+
+  return Points;
+}
+
+exports.Sample = Sample;
+
+
+//print('Point',Points);
+
+//Map.addLayer(Points,{},'Points');
+
+
+
+
+
+
+
+
+
+
+
+

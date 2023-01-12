@@ -1,0 +1,265 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var table = ee.FeatureCollection("users/zsy11600/Jiangxi/Boundary/JxLine"),
+    region1 = 
+    /* color: #d63000 */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[115.03635197807255, 27.422155712871227],
+          [115.03635197807255, 26.656451642896847],
+          [115.95920354057255, 26.656451642896847],
+          [115.95920354057255, 27.422155712871227]]], null, false),
+    testPoint = /* color: #98ff00 */ee.Geometry.Point([114.46506291557255, 26.910225069000152]),
+    sample2000 = ee.FeatureCollection("users/zsy11600/Jiangxi/VCT/Forest_Sample_2000"),
+    sample2010 = ee.FeatureCollection("users/zsy11600/Jiangxi/VCT/Forest_Sample_2010"),
+    sample2020 = ee.FeatureCollection("users/zsy11600/Jiangxi/VCT/Forest_Sample_2020");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+//export the forest point mean value and sd 
+
+// 定义影像集参数
+// var roi = table;
+// var startYear = 1986;
+// var endYear = 2020;
+// var startDay = '06-01';
+// var endDay = '9-01';
+// var index = 'NBR';
+// var maskThese = ['cloud', 'shadow', 'snow', 'water'];
+// //var ltgee = require('users/emaprlab/public:Modules/LandTrendr.js');
+// //var annualSRcollection = ltgee.buildSRcollection(startYear, endYear, startDay, endDay, roi, maskThese); // Peter here, I think this collects surface reflectance images
+
+
+
+
+//the second way to get the srcol--------------------------------------------
+var startDate = ee.Date.fromYMD(1986,1,1);
+var endDate = ee.Date.fromYMD(2021,12,31);
+var table = table;
+
+    
+/*
+ function of  get acquiring Landsat SR imageCollection
+*/
+function getImageCollection(studyArea,startDate,endDate){
+
+  var sensorBandDictLandsatSR =ee.Dictionary({
+                        L8 : ee.List([1,2,3,4,5,7,6]),
+                        L7 : ee.List([0,1,2,3,4,5,6]),
+                        L5 : ee.List([0,1,2,3,4,5,6])
+  });
+  var bandNamesLansatSR = ee.List(['blue','green','red','nir','swir1','B10','swir2']);
+  
+  var l5sr = ee.ImageCollection('LANDSAT/LT05/C01/T1_SR')
+              .filterDate(startDate,endDate)
+              .filterBounds(studyArea)
+              .filterMetadata('CLOUD_COVER','less_than',50)
+              .map(cloudMaskL457)
+              .select(sensorBandDictLandsatSR.get('L5'), bandNamesLansatSR);
+  var l7sr = ee.ImageCollection('LANDSAT/LE07/C01/T1_SR')
+              .filterDate(startDate,endDate)
+              .filterDate('2012-01-02','2012-12-30')
+              .filterBounds(studyArea)
+              .filterMetadata('CLOUD_COVER','less_than',50)
+              .map(cloudMaskL457)
+              .select(sensorBandDictLandsatSR.get('L7'), bandNamesLansatSR)
+              .map(function(image){
+                  var filled1a = image.focal_mean(2, 'square', 'pixels', 1)
+                  return filled1a.blend(image)
+                          .set('system:time_start',image.get('system:time_start'));;
+                  });
+  var l8sr = ee.ImageCollection('LANDSAT/LC08/C01/T1_SR')
+              .filterDate(startDate,endDate)
+              .filterBounds(studyArea)
+              .filterMetadata('CLOUD_COVER','less_than',50)
+              .map(maskCloud)
+              .select(sensorBandDictLandsatSR.get('L8'), bandNamesLansatSR);
+  var ls = ee.ImageCollection(l5sr.merge(l7sr).merge(l8sr));
+  return ls;
+}
+
+
+
+
+
+/*
+function of remove cloud
+*/
+var cloudMaskL457 = function(image) {
+  var qa = image.select('pixel_qa');
+  // If the cloud bit (5) is set and the cloud confidence (7) is high
+  // or the cloud shadow bit is set (3), then it's a bad pixel.
+  var cloud = qa.bitwiseAnd(1 << 5)
+                  .and(qa.bitwiseAnd(1 << 7))
+                  .or(qa.bitwiseAnd(1 << 3));
+  // Remove edge pixels that don't occur in all bands
+  var mask2 = image.mask().reduce(ee.Reducer.min());
+  return image.updateMask(cloud.not()).updateMask(mask2);
+};
+
+
+//L8 cloud mask
+  function maskCloud(image) {
+    var cloudBit = 5;
+    var cloudshadowBit = 3;
+    var cloudBitMask = Math.pow(2, cloudBit); // 0x400
+    var cloudshadowBitMask = Math.pow(2, cloudshadowBit); // 0x800
+    function mask_landsat_clouds(image) {
+    var qa = image.select('pixel_qa');
+    var mask = qa.bitwiseAnd(cloudBitMask).eq(0).and( // no clouds
+              qa.bitwiseAnd(cloudshadowBitMask).eq(0)); // no cloudshadow
+    return image.updateMask(mask);
+  }
+    return image;
+  }
+  
+
+var ls = getImageCollection(table,startDate,endDate);
+
+print('LS_ImageCollection',ls);
+
+var years = ee.List.sequence(1986,2020);
+var YearCollection = ee.ImageCollection.fromImages(
+  years.map(
+    function(y){
+      var w = ls.filter(ee.Filter.calendarRange(y,y,'year'))
+                .filter(ee.Filter.calendarRange(1,365,'day_of_year'))
+                .median()
+      return w.set('year',y)
+              .set('system:time_start',y)
+    }).flatten()
+);
+
+
+print(YearCollection,'yearCollection');
+
+function changeTheName(image){
+  var img_b3 = image.select('red').rename('B3');
+  var img_b5 = image.select('swir1').rename('B5');
+  var img_b7 = image.select('swir2').rename('B7');
+  
+  return image.addBands(img_b3).addBands(img_b5).addBands(img_b7);
+
+}
+
+var yearCol = YearCollection.map(changeTheName).select(['B3','B5','B7']);
+print('yearCol',yearCol);
+
+//add index to imgcol
+var Srcol = yearCol 
+
+print('SrCol',Srcol);
+
+
+
+
+//define mask 
+var AssetList=ee.data.listAssets('users/Conala/GLC30_2020').assets;
+var NumOfFile=AssetList.length;
+var imgCol=ee.ImageCollection([]);
+    for(var i=0;i<NumOfFile;i++)
+    {
+      imgCol=imgCol.merge(ee.Image(AssetList[i].name));
+    }
+var GLC_30_China=imgCol.max();
+var lucc = GLC_30_China.clip(table);
+
+var water = lucc.select('b1').eq(60);
+var waterMasked = water.updateMask(water);
+
+
+
+
+
+// cal the z-score  image 
+//var mean = collection.reduce(ee.Reducer.mean());
+//var sigma = collection.reduce(ee.Reducer.stdDev());
+
+//And then you can map a function over the collection to compute the z-test using those images
+
+/*
+var z = collection.map(
+        function(img) {
+            return img.subtract(mean).divide(sigma);
+        });
+*/
+
+
+
+//GET THE MEAN value of forest sample---------------------------------------
+var NeedImage = Srcol.select('B3').reduce(ee.Reducer.mean()).rename('b1');//change this 
+
+var FeatureValue = sample2020.map(function(point){ //change this 
+      
+      var meanValue = NeedImage.reduceRegion({
+        'reducer':ee.Reducer.mean(),
+        'geometry':point.geometry(),
+        'scale':30,
+        'maxPixels':1e13
+      });
+      
+      var sdValue = NeedImage.reduceRegion({
+        'reducer':ee.Reducer.stdDev(),
+        'geometry':point.geometry(),
+        'scale':30,
+        'maxPixels':1e13,
+      });
+      
+      var mean_value = meanValue.get('b1');
+      var sd_value = sdValue.get('b1');
+  
+      return ee.Feature(point.geometry(),{"mean":mean_value,'sd':sd_value})
+})
+      
+print(FeatureValue)
+
+
+Export.table.toDrive({
+  collection:FeatureValue,
+  description:'Feature_B3_mean',
+  fileNamePrefix:'Feature_B3_mean',
+  folder:'VCT_Second',
+  fileFormat:'CSV'
+})
+
+
+
+
+
+//get the stedev value ----------------------------------------------
+var img_sted = Srcol.reduce(ee.Reducer.stdDev());
+
+print('img_sted',img_sted);
+
+
+
+//第一个测试数据
+var stats = img_sted.reduceRegion(
+  {
+  'reducer':ee.Reducer.sum(),
+  'geometry':sample2000.first().geometry(),
+  'maxPixels':1e13,
+  'scale':30,
+})
+
+print('areas',stats);
+
+
+
+var SdValue = sample2010.map(function(point){ //change this 
+      var stats = img_sted.reduceRegion(
+                  {
+                  'reducer':ee.Reducer.sum(),
+                  'geometry':point.geometry(),
+                  'maxPixels':1e13,
+                  'scale':30,
+                  })
+      
+      var b3std = stats.get('B3_stdDev');
+      var b5std = stats.get('B5_stdDev');
+      var b7std = stats.get('B7_stdDev');
+      return ee.Feature(point.geometry(),{'B3_std':b3std,'B5_std':b5std,'B7_std':b7std})
+})
+
+print('SDvalue',SdValue);
